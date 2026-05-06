@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { instagramGetUrl } from 'instagram-url-direct'
-import instagramDl from '@sasmeee/igdl'
 
 export const maxDuration = 60
 
@@ -64,21 +63,39 @@ async function getInstagramInfo(url: string) {
     console.log('[v0] media-info: instagram-url-direct failed:', e instanceof Error ? e.message : e)
   }
 
-  // Fallback: Try @sasmeee/igdl
+  // Fallback: Try direct page scraping
   if (!hasVideo) {
     try {
-      console.log('[v0] media-info: Trying @sasmeee/igdl fallback...')
-      const igdlData = await instagramDl(url)
-      console.log('[v0] media-info: igdl data received:', JSON.stringify(igdlData, null, 2))
+      const pageResponse = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      })
       
-      if (igdlData && Array.isArray(igdlData) && igdlData.length > 0) {
-        hasVideo = true
-        if (igdlData[0].thumbnail_link) {
-          thumbnail = igdlData[0].thumbnail_link
+      if (pageResponse.ok) {
+        const html = await pageResponse.text()
+        
+        // Check if page contains video content
+        if (html.includes('video_url') || html.includes('"video"') || html.includes('og:video')) {
+          hasVideo = true
+        }
+        
+        // Try to extract thumbnail
+        const thumbMatch = html.match(/property="og:image" content="([^"]+)"/)
+        if (thumbMatch && thumbMatch[1]) {
+          thumbnail = thumbMatch[1]
+        }
+        
+        // Try to extract username
+        const userMatch = html.match(/@([a-zA-Z0-9_.]+)/)
+        if (userMatch && userMatch[1] && userMatch[1] !== 'instagram') {
+          username = userMatch[1]
         }
       }
-    } catch (e2) {
-      console.log('[v0] media-info: @sasmeee/igdl also failed:', e2 instanceof Error ? e2.message : e2)
+    } catch {
+      // Scraping failed, continue
     }
   }
 

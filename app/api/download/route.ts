@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { instagramGetUrl } from 'instagram-url-direct'
-import instagramDl from '@sasmeee/igdl'
 
 export const maxDuration = 300
 
@@ -92,25 +91,39 @@ export async function POST(request: NextRequest) {
         console.log('[v0] instagram-url-direct failed:', e instanceof Error ? e.message : e)
       }
 
-      // Fallback: Try @sasmeee/igdl package
+      // Fallback: Try direct page scraping
       if (!videoUrl) {
         try {
-          console.log('[v0] Trying @sasmeee/igdl fallback...')
-          const igdlData = await instagramDl(url)
-          console.log('[v0] igdl data received:', JSON.stringify(igdlData, null, 2))
+          const pageResponse = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          })
           
-          if (igdlData && Array.isArray(igdlData) && igdlData.length > 0) {
-            // Find video download link
-            const videoItem = igdlData.find((item: { download_link?: string }) => 
-              item.download_link?.includes('.mp4') || item.download_link?.includes('video')
-            ) || igdlData[0]
+          if (pageResponse.ok) {
+            const html = await pageResponse.text()
             
-            if (videoItem && videoItem.download_link) {
-              videoUrl = videoItem.download_link
+            // Try to find video URL in the page HTML
+            const videoUrlPatterns = [
+              /"video_url":"([^"]+)"/,
+              /video_url\\?":\\?"([^"\\]+)/,
+              /"contentUrl":"([^"]+\.mp4[^"]*)"/,
+              /property="og:video" content="([^"]+)"/,
+              /src="([^"]*instagram[^"]*\.mp4[^"]*)"/,
+            ]
+            
+            for (const pattern of videoUrlPatterns) {
+              const match = html.match(pattern)
+              if (match && match[1]) {
+                videoUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
+                break
+              }
             }
           }
         } catch (e2) {
-          console.log('[v0] @sasmeee/igdl also failed:', e2 instanceof Error ? e2.message : e2)
+          // Scraping failed, continue
         }
       }
 

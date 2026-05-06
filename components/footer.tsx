@@ -40,6 +40,9 @@ export function Footer() {
           <p className="text-xs text-muted-foreground mt-2">
             MediaGrab {new Date().getFullYear()}. All rights reserved.
           </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Done by Elango
+          </p>
         </div>
       </div>
     </footer>

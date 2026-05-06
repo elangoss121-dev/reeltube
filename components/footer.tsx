@@ -10,9 +10,9 @@ export function Footer() {
             <Image
               src="/logo.png"
               alt="ReelTube Logo"
-              width={120}
-              height={35}
-              className="h-8 w-auto"
+              width={160}
+              height={45}
+              className="h-11 w-auto"
             />
           </div>
           <nav className="flex items-center gap-6">

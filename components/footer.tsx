@@ -41,7 +41,24 @@ export function Footer() {
             MediaGrab {new Date().getFullYear()}. All rights reserved.
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            Done by Elango
+            Made by{" "}
+            <a
+              href="https://instagram.com/_elanxzz_"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              Elango
+            </a>
+            {" | "}
+            <a
+              href="https://instagram.com/_elanxzz_"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              @_elanxzz_
+            </a>
           </p>
         </div>
       </div>

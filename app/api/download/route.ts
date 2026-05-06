@@ -22,103 +22,177 @@ function extractInstagramShortcode(url: string): string | null {
   return null
 }
 
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 100)
+}
+
 async function getInstagramVideoUrl(url: string): Promise<{ videoUrl: string; title: string }> {
   const shortcode = extractInstagramShortcode(url)
   if (!shortcode) {
     throw new Error('Invalid Instagram URL')
   }
 
-  // Method 1: Try Instagram's embed endpoint
+  // Method 1: Use saveig.app API (most reliable)
   try {
-    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`
-    const embedResponse = await fetch(embedUrl, {
+    const apiUrl = `https://v3.saveig.app/api/ajaxSearch`
+    const formData = new URLSearchParams()
+    formData.append('q', url)
+    formData.append('t', 'media')
+    formData.append('lang', 'en')
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Origin': 'https://saveig.app',
+        'Referer': 'https://saveig.app/',
+      },
+      body: formData.toString(),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.status === 'ok' && data.data) {
+        // Parse HTML response to get video URL
+        const html = data.data
+        const videoMatch = html.match(/href="([^"]*\.mp4[^"]*)"/i) || 
+                          html.match(/href="(https:\/\/[^"]+)"/i)
+        if (videoMatch) {
+          const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
+          return { videoUrl, title: `Instagram_${shortcode}` }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[v0] saveig.app failed:', e)
+  }
+
+  // Method 2: Use snapinsta API
+  try {
+    const apiUrl = 'https://snapinsta.app/api/ajaxSearch'
+    const formData = new URLSearchParams()
+    formData.append('q', url)
+    formData.append('t', 'media')
+    formData.append('lang', 'en')
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Origin': 'https://snapinsta.app',
+        'Referer': 'https://snapinsta.app/',
+      },
+      body: formData.toString(),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.status === 'ok' && data.data) {
+        const html = data.data
+        const videoMatch = html.match(/href="([^"]*\.mp4[^"]*)"/i) ||
+                          html.match(/download-btn[^>]*href="([^"]+)"/i)
+        if (videoMatch) {
+          const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
+          return { videoUrl, title: `Instagram_${shortcode}` }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[v0] snapinsta failed:', e)
+  }
+
+  // Method 3: Use igdownloader.app API
+  try {
+    const apiUrl = 'https://igdownloader.app/api/ajaxSearch'
+    const formData = new URLSearchParams()
+    formData.append('q', url)
+    formData.append('t', 'media')
+    formData.append('lang', 'en')
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      body: formData.toString(),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.status === 'ok' && data.data) {
+        const html = data.data
+        const videoMatch = html.match(/href="([^"]*\.mp4[^"]*)"/i) ||
+                          html.match(/href="(https:\/\/[^"]+)"/i)
+        if (videoMatch) {
+          const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
+          return { videoUrl, title: `Instagram_${shortcode}` }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[v0] igdownloader failed:', e)
+  }
+
+  // Method 4: Try direct Instagram API endpoint
+  try {
+    const graphqlUrl = `https://www.instagram.com/graphql/query/?query_hash=b3055c01b4b222b8a47dc12b090e4e64&variables=${encodeURIComponent(JSON.stringify({ shortcode }))}`
+    
+    const response = await fetch(graphqlUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'application/json',
+        'X-IG-App-ID': '936619743392459',
       },
     })
 
-    if (embedResponse.ok) {
-      const html = await embedResponse.text()
-      
-      // Look for video URL in embed page
-      const videoMatch = html.match(/"video_url":"([^"]+)"/) ||
-                        html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/) ||
-                        html.match(/video[^>]*src="([^"]+\.mp4[^"]*)"/i)
-      
-      if (videoMatch) {
-        const videoUrl = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-        return { videoUrl, title: `Instagram_${shortcode}` }
+    if (response.ok) {
+      const data = await response.json()
+      const media = data?.data?.shortcode_media
+      if (media?.video_url) {
+        return { 
+          videoUrl: media.video_url, 
+          title: media.title || media.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 50) || `Instagram_${shortcode}`
+        }
       }
     }
-  } catch {
-    // Continue to next method
+  } catch (e) {
+    console.log('[v0] Instagram GraphQL failed:', e)
   }
 
-  // Method 2: Try direct page scraping with different headers
+  // Method 5: Try embed page scraping
   try {
-    const response = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
+    const response = await fetch(embedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
       },
     })
 
     if (response.ok) {
       const html = await response.text()
-      
-      // Try multiple patterns
-      const patterns = [
-        /"video_url":"([^"]+)"/,
-        /property="og:video" content="([^"]+)"/,
-        /property="og:video:secure_url" content="([^"]+)"/,
-        /"contentUrl":"([^"]+)"/,
-        /video_versions.*?"url":"([^"]+)"/,
-      ]
-
-      for (const pattern of patterns) {
-        const match = html.match(pattern)
-        if (match) {
-          const videoUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-          return { videoUrl, title: `Instagram_${shortcode}` }
-        }
-      }
-    }
-  } catch {
-    // Continue to next method
-  }
-
-  // Method 3: Try reels URL format
-  try {
-    const reelResponse = await fetch(`https://www.instagram.com/reel/${shortcode}/`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    })
-
-    if (reelResponse.ok) {
-      const html = await reelResponse.text()
-      const videoMatch = html.match(/"video_url":"([^"]+)"/) ||
-                        html.match(/property="og:video" content="([^"]+)"/)
-      
+      const videoMatch = html.match(/"video_url":"([^"]+)"/)
       if (videoMatch) {
         const videoUrl = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-        return { videoUrl, title: `Instagram_Reel_${shortcode}` }
+        return { videoUrl, title: `Instagram_${shortcode}` }
       }
     }
-  } catch {
-    // Continue
+  } catch (e) {
+    console.log('[v0] Instagram embed failed:', e)
   }
 
-  throw new Error('Could not extract video. The post may be private, not a video, or Instagram has blocked the request.')
+  throw new Error('Could not extract Instagram video. Please make sure the post is public and contains a video.')
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { url, format, quality } = await request.json()
+    const { url, format, quality, title } = await request.json()
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
@@ -131,40 +205,41 @@ export async function POST(request: NextRequest) {
 
     let downloadUrl: string
     let filename: string
+    const safeTitle = sanitizeFilename(title || 'download')
 
     if (platform === 'youtube') {
-      // Use OpenUtils YTDL API for YouTube - completely free, no API key needed
       if (format === 'mp3') {
         downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}`
-        filename = `youtube_audio_${Date.now()}.mp3`
+        filename = `${safeTitle}.mp3`
       } else {
-        const fmt = quality === '1080p' ? 'mp4-1080' : 'mp4-720'
+        const fmt = quality === '1080p' ? 'mp4-1080' : quality === '480p' ? 'mp4-480' : 'mp4-720'
         downloadUrl = `${OPENUTILS_BASE}/api/stream/video?url=${encodeURIComponent(url)}&fmt=${fmt}`
-        filename = `youtube_video_${Date.now()}.mp4`
+        filename = `${safeTitle}.mp4`
       }
 
       return NextResponse.json({ 
         downloadUrl,
         filename,
         platform,
-        direct: true // Flag to indicate direct download
+        direct: true
       })
     } else {
       // Instagram
       const igData = await getInstagramVideoUrl(url)
       downloadUrl = igData.videoUrl
-      filename = `${igData.title}_${Date.now()}.mp4`
+      const igTitle = title || igData.title
+      filename = format === 'mp3' ? `${sanitizeFilename(igTitle)}.mp3` : `${sanitizeFilename(igTitle)}.mp4`
 
       return NextResponse.json({ 
         downloadUrl,
         filename,
         platform,
-        direct: false // Need to proxy Instagram downloads
+        direct: false
       })
     }
 
   } catch (error) {
-    console.error('Download error:', error)
+    console.error('[v0] Download error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to process media' },
       { status: 500 }
@@ -176,6 +251,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const downloadUrl = searchParams.get('url')
   const filename = searchParams.get('filename') || 'download.mp4'
+  const format = searchParams.get('format') || 'mp4'
 
   if (!downloadUrl) {
     return NextResponse.json({ error: 'Download URL is required' }, { status: 400 })
@@ -195,7 +271,7 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to fetch media: ${response.status}`)
     }
 
-    const contentType = response.headers.get('content-type') || 'video/mp4'
+    const contentType = format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
     const contentLength = response.headers.get('content-length')
 
     const headers = new Headers({
@@ -213,7 +289,7 @@ export async function GET(request: NextRequest) {
       headers,
     })
   } catch (error) {
-    console.error('Stream error:', error)
+    console.error('[v0] Stream error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to download media' },
       { status: 500 }

@@ -28,43 +28,82 @@ async function getInstagramInfo(url: string) {
     throw new Error('Invalid Instagram URL')
   }
 
-  // Try to scrape the page for metadata
+  let title = `Instagram_${shortcode}`
+  let thumbnail = ''
+  let author = 'Instagram'
+
+  // Try to get metadata from Instagram embed page
   try {
-    const response = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
+    const response = await fetch(embedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
       },
     })
 
     if (response.ok) {
       const html = await response.text()
       
-      const titleMatch = html.match(/property="og:title" content="([^"]+)"/)
-      const thumbnailMatch = html.match(/property="og:image" content="([^"]+)"/)
-      const hasVideo = html.includes('"video_url"') || html.includes('og:video') || html.includes('"is_video":true')
-      
-      return {
-        id: shortcode,
-        title: titleMatch ? titleMatch[1].slice(0, 100) : `Instagram Video`,
-        thumbnail: thumbnailMatch ? thumbnailMatch[1] : '',
-        duration: '',
-        author: 'Instagram',
-        platform: 'instagram',
-        hasVideo: hasVideo
+      // Extract caption/title
+      const captionMatch = html.match(/class="Caption"[^>]*>([^<]+)</) ||
+                          html.match(/"caption":"([^"]+)"/) ||
+                          html.match(/"text":"([^"]+)"/)
+      if (captionMatch) {
+        title = captionMatch[1].slice(0, 100).replace(/\\n/g, ' ').trim() || title
+      }
+
+      // Extract thumbnail
+      const thumbMatch = html.match(/"display_url":"([^"]+)"/) ||
+                        html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ||
+                        html.match(/poster="([^"]+)"/)
+      if (thumbMatch) {
+        thumbnail = thumbMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
+      }
+
+      // Extract author
+      const authorMatch = html.match(/"username":"([^"]+)"/) ||
+                         html.match(/class="UsernameText"[^>]*>([^<]+)</)
+      if (authorMatch) {
+        author = `@${authorMatch[1]}`
       }
     }
-  } catch {
-    // Fallback to basic info
+  } catch (e) {
+    console.log('[v0] Instagram embed fetch failed:', e)
   }
 
-  // Return basic info - we'll attempt download anyway
+  // Also try main page for better metadata
+  try {
+    const pageResponse = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'text/html',
+      },
+    })
+
+    if (pageResponse.ok) {
+      const html = await pageResponse.text()
+      
+      const ogTitleMatch = html.match(/property="og:title" content="([^"]+)"/)
+      if (ogTitleMatch && ogTitleMatch[1].length > 5) {
+        title = ogTitleMatch[1].slice(0, 100)
+      }
+
+      const ogImageMatch = html.match(/property="og:image" content="([^"]+)"/)
+      if (ogImageMatch && !thumbnail) {
+        thumbnail = ogImageMatch[1]
+      }
+    }
+  } catch (e) {
+    console.log('[v0] Instagram page fetch failed:', e)
+  }
+
   return {
     id: shortcode,
-    title: `Instagram Video`,
-    thumbnail: '',
+    title,
+    thumbnail,
     duration: '',
-    author: 'Instagram',
+    author,
     platform: 'instagram',
     hasVideo: true
   }
@@ -137,7 +176,7 @@ export async function POST(request: NextRequest) {
       data: info
     })
   } catch (error) {
-    console.error('Media info error:', error)
+    console.error('[v0] Media info error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch media info' },
       { status: 500 }
@@ -145,7 +184,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Also support GET for direct URL passing
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const url = searchParams.get('url')
@@ -154,7 +192,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 })
   }
 
-  // Reuse POST logic
   const fakeRequest = {
     json: async () => ({ url })
   } as NextRequest

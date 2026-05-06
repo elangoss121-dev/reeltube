@@ -75,7 +75,7 @@ export function MediaDownloader() {
   }, [])
 
   const handleDownload = useCallback(async (format: FormatOption) => {
-    if (!currentUrl) return
+    if (!currentUrl || !media) return
 
     setIsDownloading(true)
     setDownloadingFormat(format.id)
@@ -91,6 +91,7 @@ export function MediaDownloader() {
           url: currentUrl,
           format: format.format.toLowerCase(),
           quality: format.quality,
+          title: media.title,
         }),
       })
 
@@ -147,7 +148,7 @@ export function MediaDownloader() {
       setIsDownloading(false)
       setDownloadingFormat(null)
     }
-  }, [currentUrl])
+  }, [currentUrl, media])
 
   const handleReset = useCallback(() => {
     setMedia(null)

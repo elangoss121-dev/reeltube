@@ -1,38 +1,39 @@
 import { NextRequest, NextResponse } from "next/server"
-import ytdl from "@distube/ytdl-core"
 
 export const maxDuration = 60
 
-function extractYouTubeId(url: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-  ]
-  
-  for (const pattern of patterns) {
-    const match = url.match(pattern)
-    if (match) return match[1]
-  }
+function detectPlatform(url: string): string | null {
+  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube"
+  if (url.includes("instagram.com")) return "instagram"
+  if (url.includes("tiktok.com")) return "tiktok"
+  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter"
+  if (url.includes("facebook.com") || url.includes("fb.watch")) return "facebook"
+  if (url.includes("vimeo.com")) return "vimeo"
+  if (url.includes("reddit.com")) return "reddit"
+  if (url.includes("pinterest.com") || url.includes("pin.it")) return "pinterest"
+  if (url.includes("soundcloud.com")) return "soundcloud"
+  if (url.includes("twitch.tv")) return "twitch"
   return null
 }
 
-function extractInstagramId(url: string): string | null {
-  const patterns = [
-    /instagram\.com\/(?:p|reel|reels)\/([a-zA-Z0-9_-]+)/,
-    /instagram\.com\/stories\/[^/]+\/(\d+)/,
-  ]
+function extractVideoId(url: string, platform: string): string {
+  if (platform === "youtube") {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+    ]
+    for (const pattern of patterns) {
+      const match = url.match(pattern)
+      if (match) return match[1]
+    }
+  }
   
-  for (const pattern of patterns) {
-    const match = url.match(pattern)
+  if (platform === "instagram") {
+    const match = url.match(/instagram\.com\/(?:p|reel|reels|stories\/[^/]+)\/([a-zA-Z0-9_-]+)/)
     if (match) return match[1]
   }
-  return null
-}
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, "0")}`
+  // Return a hash of the URL as fallback
+  return btoa(url).substring(0, 12)
 }
 
 export async function POST(request: NextRequest) {
@@ -43,87 +44,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 })
     }
 
-    // Detect platform
-    const isYouTube = url.includes("youtube.com") || url.includes("youtu.be")
-    const isInstagram = url.includes("instagram.com")
+    const platform = detectPlatform(url)
 
-    if (!isYouTube && !isInstagram) {
+    if (!platform) {
       return NextResponse.json(
-        { error: "Invalid URL. Please enter a valid YouTube or Instagram link." },
+        { error: "Unsupported platform. Supported: YouTube, Instagram, TikTok, Twitter/X, Facebook, Vimeo, Reddit, Pinterest, SoundCloud, Twitch" },
         { status: 400 }
       )
     }
 
-    if (isYouTube) {
-      const videoId = extractYouTubeId(url)
-      if (!videoId) {
-        return NextResponse.json({ error: "Could not extract YouTube video ID" }, { status: 400 })
-      }
+    const videoId = extractVideoId(url, platform)
 
-      try {
-        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`)
-        const videoDetails = info.videoDetails
-
-        // Get available formats
-        const formats = info.formats
-          .filter((f) => f.hasVideo || f.hasAudio)
-          .map((f) => ({
-            itag: f.itag,
-            quality: f.qualityLabel || (f.hasAudio && !f.hasVideo ? "audio" : "unknown"),
-            container: f.container,
-            hasVideo: f.hasVideo,
-            hasAudio: f.hasAudio,
-            contentLength: f.contentLength,
-            mimeType: f.mimeType,
-          }))
-
-        return NextResponse.json({
-          success: true,
-          platform: "youtube",
-          data: {
-            id: videoId,
-            title: videoDetails.title,
-            thumbnail: videoDetails.thumbnails[videoDetails.thumbnails.length - 1]?.url || "",
-            duration: formatDuration(parseInt(videoDetails.lengthSeconds)),
-            author: videoDetails.author.name,
-            viewCount: videoDetails.viewCount,
-            url: url,
-            formats,
-          },
-        })
-      } catch (ytError) {
-        console.error("YouTube fetch error:", ytError)
-        return NextResponse.json(
-          { error: "Failed to fetch YouTube video info. The video may be private, age-restricted, or unavailable." },
-          { status: 400 }
-        )
-      }
+    // For YouTube, try to get thumbnail
+    let thumbnail = ""
+    if (platform === "youtube" && videoId.length === 11) {
+      thumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
     }
 
-    if (isInstagram) {
-      const postId = extractInstagramId(url)
-      if (!postId) {
-        return NextResponse.json({ error: "Could not extract Instagram post ID" }, { status: 400 })
-      }
+    // Return basic info - the actual media details come from Cobalt during download
+    return NextResponse.json({
+      success: true,
+      platform: platform,
+      data: {
+        id: videoId,
+        title: `${platform.charAt(0).toUpperCase() + platform.slice(1)} Media`,
+        thumbnail: thumbnail,
+        duration: "",
+        author: "",
+        url: url,
+      },
+    })
 
-      // For Instagram, we'll use a different approach since there's no reliable npm package
-      // We return basic info and handle the actual download differently
-      return NextResponse.json({
-        success: true,
-        platform: "instagram",
-        data: {
-          id: postId,
-          title: `Instagram ${url.includes("/reel") ? "Reel" : "Post"} - ${postId}`,
-          thumbnail: "",
-          duration: "",
-          author: "Instagram User",
-          url: url,
-          formats: [],
-        },
-      })
-    }
-
-    return NextResponse.json({ error: "Unsupported platform" }, { status: 400 })
   } catch (error) {
     console.error("Media info error:", error)
     return NextResponse.json(

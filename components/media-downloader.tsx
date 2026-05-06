@@ -1,21 +1,24 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
 import { UrlInput } from "./url-input"
 import { MediaPreview, MediaInfo } from "./media-preview"
 import { FormatSelector, FormatOption } from "./format-selector"
 import { ProgressIndicator, ProgressStatus } from "./progress-indicator"
-import { DownloadHistory, HistoryItem } from "./download-history"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, RotateCcw } from "lucide-react"
 
-function detectPlatform(url: string): "youtube" | "instagram" | null {
-  if (url.includes("youtube.com") || url.includes("youtu.be")) {
-    return "youtube"
-  }
-  if (url.includes("instagram.com")) {
-    return "instagram"
-  }
+function detectPlatform(url: string): string | null {
+  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube"
+  if (url.includes("instagram.com")) return "instagram"
+  if (url.includes("tiktok.com")) return "tiktok"
+  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter"
+  if (url.includes("facebook.com") || url.includes("fb.watch")) return "facebook"
+  if (url.includes("vimeo.com")) return "vimeo"
+  if (url.includes("reddit.com")) return "reddit"
+  if (url.includes("pinterest.com") || url.includes("pin.it")) return "pinterest"
+  if (url.includes("soundcloud.com")) return "soundcloud"
+  if (url.includes("twitch.tv")) return "twitch"
   return null
 }
 
@@ -27,30 +30,6 @@ export function MediaDownloader() {
   const [error, setError] = useState<string | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null)
-  const [history, setHistory] = useState<HistoryItem[]>([])
-
-  // Load history from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem("download-history")
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        setHistory(parsed.map((item: HistoryItem) => ({
-          ...item,
-          downloadedAt: new Date(item.downloadedAt)
-        })))
-      } catch {
-        // Invalid data, ignore
-      }
-    }
-  }, [])
-
-  // Save history to localStorage
-  useEffect(() => {
-    if (history.length > 0) {
-      localStorage.setItem("download-history", JSON.stringify(history))
-    }
-  }, [history])
 
   const handleUrlSubmit = useCallback(async (url: string) => {
     setError(null)
@@ -62,7 +41,7 @@ export function MediaDownloader() {
     const platform = detectPlatform(url)
 
     if (!platform) {
-      setError("Invalid URL. Please enter a valid YouTube or Instagram link.")
+      setError("Unsupported URL. Supported platforms: YouTube, Instagram, TikTok, Twitter/X, Facebook, Vimeo, Reddit, Pinterest, SoundCloud, Twitch")
       setIsLoading(false)
       return
     }
@@ -83,9 +62,7 @@ export function MediaDownloader() {
       }
 
       setStatus("fetching")
-      
-      // Small delay for UX
-      await new Promise((r) => setTimeout(r, 500))
+      await new Promise((r) => setTimeout(r, 300))
 
       setMedia({
         id: data.data.id,
@@ -106,86 +83,79 @@ export function MediaDownloader() {
   }, [])
 
   const handleDownload = useCallback(async (format: FormatOption) => {
-    if (!media || !currentUrl) return
+    if (!currentUrl) return
 
     setIsDownloading(true)
     setDownloadingFormat(format.id)
     setStatus("converting")
+    setError(null)
 
     try {
-      // Build download URL with parameters
-      const params = new URLSearchParams({
-        url: currentUrl,
-        format: format.format.toLowerCase(),
-        quality: format.quality,
+      // Call the download API to get the direct URL
+      const response = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: currentUrl,
+          format: format.format.toLowerCase(),
+          quality: format.quality,
+        }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Download failed")
+      }
 
       setStatus("preparing")
 
-      // Create a link and trigger download
-      const downloadUrl = `/api/download?${params.toString()}`
-      
-      // Use fetch to get the file and trigger download
-      const response = await fetch(downloadUrl)
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Download failed" }))
-        throw new Error(errorData.error || "Download failed")
-      }
+      // Trigger the download directly from the Cobalt URL
+      const downloadUrl = data.downloadUrl
+      const filename = media?.title || "download"
+      const fileFormat = data.format || format.format.toLowerCase()
 
-      // Get the blob and create download link
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
+      // Create a hidden link and trigger download
+      const link = document.createElement("a")
+      link.href = downloadUrl
+      link.download = `${filename.replace(/[^\w\s-]/g, "").substring(0, 50)}.${fileFormat}`
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
       
-      // Get filename from content-disposition header or generate one
-      const contentDisposition = response.headers.get("content-disposition")
-      let filename = `${media.title.slice(0, 50)}.${format.format.toLowerCase()}`
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?([^"]+)"?/)
-        if (match) filename = match[1]
-      }
-      
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+      // For cross-origin downloads, we need to fetch and create a blob
+      try {
+        const fileResponse = await fetch(`/api/download?downloadUrl=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(filename)}&format=${fileFormat}`)
+        
+        if (!fileResponse.ok) {
+          throw new Error("Failed to download file")
+        }
 
-      // Add to history
-      const historyItem: HistoryItem = {
-        ...media,
-        format: format.format,
-        quality: format.quality,
-        downloadedAt: new Date(),
-        url: currentUrl,
+        const blob = await fileResponse.blob()
+        const blobUrl = window.URL.createObjectURL(blob)
+        
+        link.href = blobUrl
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        // Clean up blob URL after a delay
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
+      } catch {
+        // Fallback: try direct link
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
       }
-      setHistory((prev) => [historyItem, ...prev.slice(0, 9)])
 
       setStatus("complete")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed")
+      setError(err instanceof Error ? err.message : "Download failed. Please try again.")
       setStatus("complete")
     } finally {
       setIsDownloading(false)
       setDownloadingFormat(null)
     }
-  }, [media, currentUrl])
-
-  const handleRedownload = useCallback((item: HistoryItem) => {
-    if (item.url) {
-      setCurrentUrl(item.url)
-    }
-    setMedia(item)
-    setStatus("complete")
-    setError(null)
-  }, [])
-
-  const handleClearHistory = useCallback(() => {
-    setHistory([])
-    localStorage.removeItem("download-history")
-  }, [])
+  }, [currentUrl, media])
 
   const handleReset = useCallback(() => {
     setMedia(null)
@@ -205,19 +175,31 @@ export function MediaDownloader() {
           Download Videos & Audio
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
-          Paste any Instagram or YouTube link to download in MP4 or MP3 format. Fast, free, and easy to use.
+          Paste any link from YouTube, Instagram, TikTok, Twitter, and more. Download as MP4 or MP3 instantly.
         </p>
       </div>
 
       {/* URL Input */}
       <UrlInput onSubmit={handleUrlSubmit} isLoading={isLoading} />
 
+      {/* Supported Platforms */}
+      <div className="flex flex-wrap justify-center gap-2 mt-4 text-xs text-muted-foreground">
+        <span className="px-2 py-1 bg-secondary rounded">YouTube</span>
+        <span className="px-2 py-1 bg-secondary rounded">Instagram</span>
+        <span className="px-2 py-1 bg-secondary rounded">TikTok</span>
+        <span className="px-2 py-1 bg-secondary rounded">Twitter/X</span>
+        <span className="px-2 py-1 bg-secondary rounded">Facebook</span>
+        <span className="px-2 py-1 bg-secondary rounded">Vimeo</span>
+        <span className="px-2 py-1 bg-secondary rounded">Reddit</span>
+        <span className="px-2 py-1 bg-secondary rounded">Pinterest</span>
+      </div>
+
       {/* Error Message */}
       {error && !isLoading && (
         <div className="flex items-center justify-center gap-2 mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-          <AlertCircle className="h-5 w-5 text-destructive" />
+          <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
           <span className="text-sm text-destructive">{error}</span>
-          <Button variant="ghost" size="sm" onClick={handleReset} className="ml-2">
+          <Button variant="ghost" size="sm" onClick={handleReset} className="ml-2 flex-shrink-0">
             <RotateCcw className="h-4 w-4 mr-1" />
             Try again
           </Button>
@@ -235,7 +217,7 @@ export function MediaDownloader() {
       {media && status === "complete" && (
         <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">Media Found</h2>
+            <h2 className="text-lg font-semibold text-foreground">Ready to Download</h2>
             <Button variant="ghost" size="sm" onClick={handleReset}>
               <RotateCcw className="h-4 w-4 mr-1" />
               New Download
@@ -254,27 +236,20 @@ export function MediaDownloader() {
         </div>
       )}
 
-      {/* Download History */}
-      <DownloadHistory
-        items={history}
-        onRedownload={handleRedownload}
-        onClear={handleClearHistory}
-      />
-
       {/* Features Section */}
       {!media && !isLoading && (
         <div className="mt-16 grid sm:grid-cols-3 gap-6">
           <FeatureCard
-            title="Lightning Fast"
-            description="Our servers process your downloads in seconds, not minutes."
+            title="No Restrictions"
+            description="Download from any public video or audio without limitations."
           />
           <FeatureCard
             title="Multiple Formats"
-            description="Choose from various quality options for video and audio."
+            description="Choose MP4 for video or MP3 for audio in various quality options."
           />
           <FeatureCard
             title="No Registration"
-            description="Start downloading immediately. No account needed."
+            description="Start downloading immediately. No accounts, no tracking."
           />
         </div>
       )}

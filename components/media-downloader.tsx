@@ -105,20 +105,12 @@ export function MediaDownloader() {
 
       const { downloadUrl, filename, direct, platform } = data
 
+      // Use the filename from server (based on video title)
+      const downloadFilename = filename || `${media.title || 'download'}.${format.format.toLowerCase() === 'mp3' ? 'mp3' : 'mp4'}`
+
       if (direct && platform === "youtube") {
-        // For YouTube, OpenUtils provides direct streaming URLs
-        // Open in new tab for direct download
-        const link = document.createElement("a")
-        link.href = downloadUrl
-        link.download = filename
-        link.target = "_blank"
-        link.rel = "noopener noreferrer"
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      } else {
-        // For Instagram, we need to proxy through our API
-        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(filename)}`
+        // For YouTube, we still need to fetch through proxy for proper filename
+        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(downloadFilename)}&format=${format.format.toLowerCase()}`
         
         const fileResponse = await fetch(proxyUrl)
         
@@ -131,12 +123,32 @@ export function MediaDownloader() {
         
         const link = document.createElement("a")
         link.href = blobUrl
-        link.download = filename
+        link.download = downloadFilename
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
         
-        // Clean up blob URL
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
+      } else {
+        // For Instagram, proxy through our API
+        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(downloadFilename)}&format=${format.format.toLowerCase()}`
+        
+        const fileResponse = await fetch(proxyUrl)
+        
+        if (!fileResponse.ok) {
+          throw new Error("Failed to download file")
+        }
+
+        const blob = await fileResponse.blob()
+        const blobUrl = window.URL.createObjectURL(blob)
+        
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = downloadFilename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
         setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
       }
 

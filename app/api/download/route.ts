@@ -23,10 +23,14 @@ function extractInstagramShortcode(url: string): string | null {
 }
 
 function sanitizeFilename(name: string): string {
+  if (!name || name.trim().length === 0) return 'download'
+  
   return name
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
-    .replace(/\s+/g, '_')
-    .replace(/_+/g, '_')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '') // Remove invalid filename chars
+    .replace(/[#@]/g, '') // Remove hashtags and mentions
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .replace(/_+/g, '_') // Remove duplicate underscores
+    .replace(/^_+|_+$/g, '') // Trim underscores from start/end
     .trim()
     .slice(0, 100) || 'download'
 }
@@ -353,9 +357,13 @@ export async function GET(request: NextRequest) {
     const contentType = format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
     const contentLength = response.headers.get('content-length')
 
+    // Properly encode filename for Content-Disposition header
+    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_') // ASCII only for basic filename
+    const encodedFilename = encodeURIComponent(filename)
+    
     const headers = new Headers({
       'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
       'Cache-Control': 'no-cache',
     })
 

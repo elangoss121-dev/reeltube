@@ -28,15 +28,18 @@ const youtubeFormats: FormatOption[] = [
   { id: "mp4-720", type: "video", quality: "720p HD", format: "MP4", size: "~30MB" },
   { id: "mp4-480", type: "video", quality: "480p", format: "MP4", size: "~15MB" },
   { id: "mp4-360", type: "video", quality: "360p", format: "MP4", size: "~8MB" },
-  { id: "mp3-320", type: "audio", quality: "320kbps", format: "MP3", size: "~5MB" },
-  { id: "mp3-192", type: "audio", quality: "192kbps", format: "MP3", size: "~3MB" },
-  { id: "mp3-128", type: "audio", quality: "128kbps", format: "MP3", size: "~2MB" },
+  { id: "flac-lossless", type: "audio", quality: "FLAC Lossless", format: "FLAC", size: "~30MB" },
+  { id: "mp3-320", type: "audio", quality: "320kbps (Best MP3)", format: "MP3", size: "~8MB" },
+  { id: "mp3-256", type: "audio", quality: "256kbps (High)", format: "MP3", size: "~6MB" },
+  { id: "mp3-192", type: "audio", quality: "192kbps (Standard)", format: "MP3", size: "~4MB" },
+  { id: "mp3-128", type: "audio", quality: "128kbps (Low)", format: "MP3", size: "~2MB" },
 ]
 
 const instagramFormats: FormatOption[] = [
   { id: "mp4-best", type: "video", quality: "Best Quality", format: "MP4", size: "~30MB" },
   { id: "mp4-hd", type: "video", quality: "HD", format: "MP4", size: "~20MB" },
-  { id: "mp3-audio", type: "audio", quality: "Audio", format: "MP3", size: "~2MB" },
+  { id: "mp3-best", type: "audio", quality: "Best Quality Audio", format: "MP3", size: "~5MB" },
+  { id: "mp3-audio", type: "audio", quality: "Standard Audio", format: "MP3", size: "~2MB" },
 ]
 
 export function FormatSelector({ platform, onDownload, isDownloading, downloadingFormat }: FormatSelectorProps) {

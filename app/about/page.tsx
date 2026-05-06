@@ -8,10 +8,10 @@ export default function AboutPage() {
       <Header />
       <main className="flex-1 container mx-auto px-4 py-12">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-4xl font-bold text-foreground mb-6">About MediaGrab</h1>
+          <h1 className="text-4xl font-bold text-foreground mb-6">About ReelTube</h1>
           
           <p className="text-lg text-muted-foreground mb-8">
-            MediaGrab is a free, fast, and reliable tool for downloading videos and audio from 
+            ReelTube is a free, fast, and reliable tool for downloading videos and audio from 
             Instagram and YouTube. Our mission is to provide a simple, user-friendly experience 
             for saving your favorite content for personal use.
           </p>
@@ -73,7 +73,7 @@ export default function AboutPage() {
           <div className="bg-card border border-border rounded-xl p-6">
             <h2 className="text-xl font-bold text-foreground mb-3">Important Notice</h2>
             <p className="text-muted-foreground">
-              MediaGrab is intended for personal use only. Please respect copyright laws and the 
+              ReelTube is intended for personal use only. Please respect copyright laws and the 
               terms of service of content platforms. We do not encourage or support the unauthorized 
               distribution of copyrighted material.
             </p>

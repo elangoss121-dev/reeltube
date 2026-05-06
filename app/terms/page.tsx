@@ -13,7 +13,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-4">1. Acceptance of Terms</h2>
             <p className="text-muted-foreground mb-4">
-              By accessing and using MediaGrab, you accept and agree to be bound by these 
+              By accessing and using ReelTube, you accept and agree to be bound by these 
               Terms of Use. If you do not agree to these terms, please do not use our service.
             </p>
           </section>
@@ -21,7 +21,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-4">2. Description of Service</h2>
             <p className="text-muted-foreground mb-4">
-              MediaGrab provides a tool for downloading publicly available video and audio 
+              ReelTube provides a tool for downloading publicly available video and audio 
               content from supported platforms (Instagram and YouTube) for personal, 
               non-commercial use only.
             </p>
@@ -53,7 +53,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-4">5. Intellectual Property</h2>
             <p className="text-muted-foreground mb-4">
-              MediaGrab does not claim ownership of any content downloaded through our service. 
+              ReelTube does not claim ownership of any content downloaded through our service. 
               All content remains the property of its respective owners. Users are responsible 
               for ensuring they have the right to download and use any content.
             </p>
@@ -71,7 +71,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-4">7. Limitation of Liability</h2>
             <p className="text-muted-foreground mb-4">
-              To the maximum extent permitted by law, MediaGrab shall not be liable for any 
+              To the maximum extent permitted by law, ReelTube shall not be liable for any 
               indirect, incidental, special, consequential, or punitive damages resulting 
               from your use of or inability to use the service.
             </p>

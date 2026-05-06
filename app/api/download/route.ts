@@ -39,13 +39,31 @@ export async function POST(request: NextRequest) {
 
     let downloadUrl: string
     let filename: string
-    const fileExtension = format === 'mp3' ? 'mp3' : 'mp4'
+    const fileExtension = format === 'flac' ? 'flac' : format === 'mp3' ? 'mp3' : 'mp4'
 
     if (platform === 'youtube') {
       const safeTitle = sanitizeFilename(title || 'YouTube_Video')
       
-      if (format === 'mp3') {
-        downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}`
+      if (format === 'mp3' || format === 'flac') {
+        // Map audio quality to bitrate
+        let audioBitrate = '128' // default
+        if (quality.includes('FLAC') || quality.includes('Lossless')) {
+          audioBitrate = 'flac'
+        } else if (quality.includes('320')) {
+          audioBitrate = '320'
+        } else if (quality.includes('256')) {
+          audioBitrate = '256'
+        } else if (quality.includes('192')) {
+          audioBitrate = '192'
+        } else if (quality.includes('128')) {
+          audioBitrate = '128'
+        }
+        
+        if (audioBitrate === 'flac') {
+          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&fmt=flac`
+        } else {
+          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&bitrate=${audioBitrate}`
+        }
       } else {
         // Map quality to format code
         let fmt = 'mp4-720' // default
@@ -198,7 +216,7 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to fetch media: ${response.status}`)
     }
 
-    const contentType = format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
+    const contentType = format === 'flac' ? 'audio/flac' : format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
     const contentLength = response.headers.get('content-length')
 
     const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_')

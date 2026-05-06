@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { instagramGetUrl } from 'instagram-url-direct'
+import instagramDl from '@sasmeee/igdl'
 
 export const maxDuration = 60
 
@@ -28,136 +30,72 @@ async function getInstagramInfo(url: string) {
     throw new Error('Invalid Instagram URL')
   }
 
-  let title = `Instagram_Reel_${shortcode}`
+  let hasVideo = false
   let thumbnail = ''
-  let author = 'Instagram User'
+  let username = 'Instagram'
+  let fullname = 'Instagram User'
 
-  // Try multiple methods to get Instagram metadata
-  
-  // Method 1: Try Instagram's oEmbed endpoint (works for public posts)
+  // Try instagram-url-direct package first
   try {
-    const oembedUrl = `https://api.instagram.com/oembed?url=${encodeURIComponent(url)}`
-    const response = await fetch(oembedUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-      },
-    })
+    console.log('[v0] media-info: Fetching Instagram URL:', url)
+    const data = await instagramGetUrl(url)
+    console.log('[v0] media-info: Instagram data received:', JSON.stringify(data, null, 2))
+    
+    if (data && data.url_list && data.url_list.length > 0) {
+      hasVideo = data.media_details?.some(m => m.type === 'video') || true
 
-    if (response.ok) {
-      const data = await response.json()
-      if (data.title) {
-        title = data.title.slice(0, 100)
+      if (data.media_details && data.media_details.length > 0) {
+        const videoMedia = data.media_details.find(m => m.type === 'video')
+        if (videoMedia && videoMedia.thumbnail) {
+          thumbnail = videoMedia.thumbnail
+        } else if (data.media_details[0].thumbnail) {
+          thumbnail = data.media_details[0].thumbnail
+        }
       }
-      if (data.thumbnail_url) {
-        thumbnail = data.thumbnail_url
+
+      if (data.post_info?.owner_username) {
+        username = data.post_info.owner_username
       }
-      if (data.author_name) {
-        author = `@${data.author_name}`
+      if (data.post_info?.owner_fullname) {
+        fullname = data.post_info.owner_fullname
       }
     }
   } catch (e) {
-    // Silent fail, continue with other methods
+    console.log('[v0] media-info: instagram-url-direct failed:', e instanceof Error ? e.message : e)
   }
 
-  // Method 2: Try scraping main page for metadata
-  try {
-    const pageResponse = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    })
-
-    if (pageResponse.ok) {
-      const html = await pageResponse.text()
-      
-      // Extract og:title
-      const ogTitleMatch = html.match(/property="og:title"\s+content="([^"]+)"/) ||
-                          html.match(/content="([^"]+)"\s+property="og:title"/)
-      if (ogTitleMatch && ogTitleMatch[1].length > 5) {
-        title = ogTitleMatch[1]
-          .replace(/ on Instagram:.*$/i, '')
-          .replace(/ \| Instagram$/i, '')
-          .slice(0, 100)
-      }
-
-      // Extract og:image for thumbnail
-      const ogImageMatch = html.match(/property="og:image"\s+content="([^"]+)"/) ||
-                          html.match(/content="([^"]+)"\s+property="og:image"/)
-      if (ogImageMatch && !thumbnail) {
-        thumbnail = ogImageMatch[1].replace(/&amp;/g, '&')
-      }
-
-      // Extract author from meta or script
-      const authorMatch = html.match(/"username":"([^"]+)"/) ||
-                         html.match(/@([a-zA-Z0-9_.]+)/) 
-      if (authorMatch && author === 'Instagram User') {
-        author = `@${authorMatch[1]}`
-      }
-    }
-  } catch (e) {
-    // Silent fail
-  }
-
-  // Method 3: Try embed page as last resort
-  if (title === `Instagram_Reel_${shortcode}` || !thumbnail) {
+  // Fallback: Try @sasmeee/igdl
+  if (!hasVideo) {
     try {
-      const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
-      const response = await fetch(embedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml',
-        },
-      })
-
-      if (response.ok) {
-        const html = await response.text()
-        
-        // Extract caption/title from embed
-        const captionMatch = html.match(/"caption":"([^"]{1,200})"/) ||
-                            html.match(/class="Caption"[^>]*>([^<]{1,200})</)
-        if (captionMatch && title === `Instagram_Reel_${shortcode}`) {
-          title = captionMatch[1]
-            .replace(/\\n/g, ' ')
-            .replace(/\\u[0-9a-fA-F]{4}/g, '')
-            .trim()
-            .slice(0, 100) || title
-        }
-
-        // Extract thumbnail from embed
-        const thumbMatch = html.match(/"display_url":"([^"]+)"/) ||
-                          html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/)
-        if (thumbMatch && !thumbnail) {
-          thumbnail = thumbMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-        }
-
-        // Extract username
-        const userMatch = html.match(/"username":"([^"]+)"/)
-        if (userMatch && author === 'Instagram User') {
-          author = `@${userMatch[1]}`
+      console.log('[v0] media-info: Trying @sasmeee/igdl fallback...')
+      const igdlData = await instagramDl(url)
+      console.log('[v0] media-info: igdl data received:', JSON.stringify(igdlData, null, 2))
+      
+      if (igdlData && Array.isArray(igdlData) && igdlData.length > 0) {
+        hasVideo = true
+        if (igdlData[0].thumbnail_link) {
+          thumbnail = igdlData[0].thumbnail_link
         }
       }
-    } catch (e) {
-      // Silent fail
+    } catch (e2) {
+      console.log('[v0] media-info: @sasmeee/igdl also failed:', e2 instanceof Error ? e2.message : e2)
     }
   }
 
-  // Clean up title
-  title = title
-    .replace(/[#@]\S+/g, '') // Remove hashtags and mentions
-    .replace(/\s+/g, ' ')
-    .trim() || `Instagram_Reel_${shortcode}`
+  if (!hasVideo) {
+    throw new Error('Could not fetch Instagram post. Please make sure the post is public and contains a video.')
+  }
+
+  const title = `${username}_video`
 
   return {
     id: shortcode,
-    title,
-    thumbnail,
+    title: title,
+    thumbnail: thumbnail,
     duration: '',
-    author,
+    author: fullname,
     platform: 'instagram',
-    hasVideo: true
+    hasVideo: hasVideo,
   }
 }
 

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { instagramGetUrl } from 'instagram-url-direct'
+import instagramDl from '@sasmeee/igdl'
 
 export const maxDuration = 300
 
@@ -10,258 +12,17 @@ function detectPlatform(url: string): string | null {
   return null
 }
 
-function extractInstagramShortcode(url: string): string | null {
-  const patterns = [
-    /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/,
-    /instagram\.com\/stories\/[^/]+\/(\d+)/,
-  ]
-  for (const pattern of patterns) {
-    const match = url.match(pattern)
-    if (match) return match[1]
-  }
-  return null
-}
-
 function sanitizeFilename(name: string): string {
   if (!name || name.trim().length === 0) return 'download'
   
   return name
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '') // Remove invalid filename chars
-    .replace(/[#@]/g, '') // Remove hashtags and mentions
-    .replace(/\s+/g, '_') // Replace spaces with underscores
-    .replace(/_+/g, '_') // Remove duplicate underscores
-    .replace(/^_+|_+$/g, '') // Trim underscores from start/end
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+    .replace(/[#@]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
     .trim()
     .slice(0, 100) || 'download'
-}
-
-async function getInstagramVideoUrl(url: string, shortcode: string): Promise<{ videoUrl: string; title: string }> {
-  const defaultTitle = `Instagram_Reel_${shortcode}`
-  
-  // Method 1: Using sssinstagram API (most reliable as of 2025)
-  try {
-    const formData = new URLSearchParams()
-    formData.append('link', url)
-    formData.append('token', '')
-
-    const response = await fetch('https://sssinstagram.com/api/v1/download', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Origin': 'https://sssinstagram.com',
-        'Referer': 'https://sssinstagram.com/',
-      },
-      body: formData.toString(),
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.data && data.data.length > 0) {
-        const video = data.data.find((item: { type: string }) => item.type === 'video') || data.data[0]
-        if (video && video.url) {
-          return { 
-            videoUrl: video.url, 
-            title: data.title || defaultTitle 
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // Silent fail, try next method
-  }
-
-  // Method 2: Using fastdl API
-  try {
-    const formData = new URLSearchParams()
-    formData.append('url', url)
-
-    const response = await fetch('https://fastdl.app/api/convert', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-      },
-      body: formData.toString(),
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.url) {
-        return { videoUrl: data.url, title: data.title || defaultTitle }
-      }
-    }
-  } catch (e) {
-    // Silent fail, try next method
-  }
-
-  // Method 3: Using SnapSave API
-  try {
-    const response = await fetch('https://snapsave.app/action.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': '*/*',
-        'Origin': 'https://snapsave.app',
-        'Referer': 'https://snapsave.app/',
-      },
-      body: `url=${encodeURIComponent(url)}`,
-    })
-
-    if (response.ok) {
-      const html = await response.text()
-      // Look for video URL in response
-      const urlMatch = html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/i) ||
-                       html.match(/"url":"(https:[^"]+)"/i) ||
-                       html.match(/downloadUrlVideo":"(https:[^"]+)"/i)
-      if (urlMatch) {
-        const videoUrl = urlMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-        return { videoUrl, title: defaultTitle }
-      }
-    }
-  } catch (e) {
-    // Silent fail, try next method
-  }
-
-  // Method 4: Using ddinstagram proxy
-  try {
-    const ddUrl = url.replace('instagram.com', 'ddinstagram.com')
-    const response = await fetch(ddUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
-    })
-
-    if (response.ok) {
-      const html = await response.text()
-      const videoMatch = html.match(/<source[^>]+src="([^"]+)"/i) ||
-                        html.match(/property="og:video"[^>]+content="([^"]+)"/i) ||
-                        html.match(/"video_url":"([^"]+)"/i)
-      if (videoMatch) {
-        const videoUrl = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
-        return { videoUrl, title: defaultTitle }
-      }
-    }
-  } catch (e) {
-    // Silent fail, try next method
-  }
-
-  // Method 5: Direct Instagram embed scraping with different approach
-  try {
-    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`
-    const response = await fetch(embedUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-      },
-    })
-
-    if (response.ok) {
-      const html = await response.text()
-      
-      // Multiple patterns to find video URL
-      const patterns = [
-        /"video_url":"([^"]+)"/,
-        /video_url\\?":\\?"([^"\\]+)/,
-        /"contentUrl":"([^"]+)"/,
-        /property="og:video"[^>]+content="([^"]+)"/,
-        /data-video-url="([^"]+)"/,
-        /<video[^>]+src="([^"]+)"/,
-      ]
-
-      for (const pattern of patterns) {
-        const match = html.match(pattern)
-        if (match) {
-          const videoUrl = match[1]
-            .replace(/\\u0026/g, '&')
-            .replace(/\\u003C/g, '<')
-            .replace(/\\u003E/g, '>')
-            .replace(/\\/g, '')
-          
-          if (videoUrl.includes('http')) {
-            return { videoUrl, title: defaultTitle }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // Silent fail, try next method
-  }
-
-  // Method 6: Using igram API
-  try {
-    const response = await fetch('https://igram.world/api/convert', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Origin': 'https://igram.world',
-        'Referer': 'https://igram.world/',
-      },
-      body: `url=${encodeURIComponent(url)}`,
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.url) {
-        return { videoUrl: data.url, title: data.meta?.title || defaultTitle }
-      }
-      if (data.items && data.items.length > 0) {
-        const video = data.items.find((i: { url: string }) => i.url?.includes('.mp4')) || data.items[0]
-        if (video?.url) {
-          return { videoUrl: video.url, title: defaultTitle }
-        }
-      }
-    }
-  } catch (e) {
-    // Silent fail
-  }
-
-  // Method 7: Using saveinsta API
-  try {
-    const formData = new URLSearchParams()
-    formData.append('q', url)
-    formData.append('t', 'media')
-    formData.append('lang', 'en')
-
-    const response = await fetch('https://v3.saveinsta.app/api/ajaxSearch', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Origin': 'https://saveinsta.app',
-        'Referer': 'https://saveinsta.app/',
-      },
-      body: formData.toString(),
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.data) {
-        // Parse HTML response
-        const htmlData = data.data
-        const videoMatch = htmlData.match(/href="([^"]*?\.mp4[^"]*?)"/i) ||
-                          htmlData.match(/href="(https:\/\/[^"]+)"/i)
-        if (videoMatch) {
-          const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
-          return { videoUrl, title: defaultTitle }
-        }
-      }
-    }
-  } catch (e) {
-    // Silent fail
-  }
-
-  throw new Error('Unable to extract video from Instagram. The post may be private or the service is temporarily unavailable. Please try again later.')
 }
 
 export async function POST(request: NextRequest) {
@@ -300,17 +61,76 @@ export async function POST(request: NextRequest) {
         direct: true
       })
     } else {
-      // Instagram
-      const shortcode = extractInstagramShortcode(url)
-      if (!shortcode) {
-        return NextResponse.json({ error: 'Invalid Instagram URL' }, { status: 400 })
+      // Instagram - use instagram-url-direct package
+      let data
+      let videoUrl: string | null = null
+      let ownerUsername = ''
+
+      try {
+        console.log('[v0] Fetching Instagram URL:', url)
+        data = await instagramGetUrl(url)
+        console.log('[v0] Instagram data received:', JSON.stringify(data, null, 2))
+        
+        if (data && data.url_list && data.url_list.length > 0) {
+          // Find a video URL from media_details or url_list
+          if (data.media_details && data.media_details.length > 0) {
+            const videoMedia = data.media_details.find(m => m.type === 'video')
+            if (videoMedia && videoMedia.url) {
+              videoUrl = videoMedia.url
+            }
+          }
+          
+          if (!videoUrl && data.url_list.length > 0) {
+            videoUrl = data.url_list[0]
+          }
+
+          if (data.post_info?.owner_username) {
+            ownerUsername = data.post_info.owner_username
+          }
+        }
+      } catch (e) {
+        console.log('[v0] instagram-url-direct failed:', e instanceof Error ? e.message : e)
       }
 
-      const igData = await getInstagramVideoUrl(url, shortcode)
-      downloadUrl = igData.videoUrl
+      // Fallback: Try @sasmeee/igdl package
+      if (!videoUrl) {
+        try {
+          console.log('[v0] Trying @sasmeee/igdl fallback...')
+          const igdlData = await instagramDl(url)
+          console.log('[v0] igdl data received:', JSON.stringify(igdlData, null, 2))
+          
+          if (igdlData && Array.isArray(igdlData) && igdlData.length > 0) {
+            // Find video download link
+            const videoItem = igdlData.find((item: { download_link?: string }) => 
+              item.download_link?.includes('.mp4') || item.download_link?.includes('video')
+            ) || igdlData[0]
+            
+            if (videoItem && videoItem.download_link) {
+              videoUrl = videoItem.download_link
+            }
+          }
+        } catch (e2) {
+          console.log('[v0] @sasmeee/igdl also failed:', e2 instanceof Error ? e2.message : e2)
+        }
+      }
+
+      if (!videoUrl) {
+        return NextResponse.json({ 
+          error: 'Could not extract Instagram video. Please make sure the post is public and contains a video.' 
+        }, { status: 400 })
+      }
+
+      downloadUrl = videoUrl
+
+      // Create filename from title or username
+      let finalTitle = title
+      if (!finalTitle && ownerUsername) {
+        finalTitle = `Instagram_${ownerUsername}`
+      }
+      if (!finalTitle) {
+        finalTitle = 'Instagram_video'
+      }
       
-      // Use provided title, or extracted title, or fallback
-      const finalTitle = title || igData.title || `Instagram_${shortcode}`
       filename = `${sanitizeFilename(finalTitle)}.${fileExtension}`
 
       return NextResponse.json({ 
@@ -322,10 +142,8 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to process media' },
-      { status: 500 }
-    )
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process media'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 
@@ -346,7 +164,6 @@ export async function GET(request: NextRequest) {
         'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.instagram.com/',
-        'Origin': 'https://www.instagram.com',
       },
     })
 
@@ -357,8 +174,7 @@ export async function GET(request: NextRequest) {
     const contentType = format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
     const contentLength = response.headers.get('content-length')
 
-    // Properly encode filename for Content-Disposition header
-    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_') // ASCII only for basic filename
+    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_')
     const encodedFilename = encodeURIComponent(filename)
     
     const headers = new Headers({

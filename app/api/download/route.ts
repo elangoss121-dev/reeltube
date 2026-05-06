@@ -1,29 +1,119 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
 
 export const maxDuration = 300
 
-const RAPIDAPI_HOST = "all-media-downloader1.p.rapidapi.com"
-const RAPIDAPI_URL = `https://${RAPIDAPI_HOST}/all`
+const OPENUTILS_BASE = 'https://ytdl.openutils.net'
 
-interface MediaFormat {
-  format_id: string
-  ext: string
-  filesize?: number
-  url: string
-  quality?: string
-  resolution?: string
-  acodec?: string
-  vcodec?: string
+function detectPlatform(url: string): string | null {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
+  if (url.includes('instagram.com')) return 'instagram'
+  return null
 }
 
-interface ApiResponse {
-  ok: boolean
-  source?: string
-  title?: string
-  thumbnail?: string
-  duration?: number
-  formats?: MediaFormat[]
-  error?: string
+function extractInstagramShortcode(url: string): string | null {
+  const patterns = [
+    /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/,
+    /instagram\.com\/stories\/[^/]+\/(\d+)/,
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]
+  }
+  return null
+}
+
+async function getInstagramVideoUrl(url: string): Promise<{ videoUrl: string; title: string }> {
+  const shortcode = extractInstagramShortcode(url)
+  if (!shortcode) {
+    throw new Error('Invalid Instagram URL')
+  }
+
+  // Method 1: Try Instagram's embed endpoint
+  try {
+    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`
+    const embedResponse = await fetch(embedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    })
+
+    if (embedResponse.ok) {
+      const html = await embedResponse.text()
+      
+      // Look for video URL in embed page
+      const videoMatch = html.match(/"video_url":"([^"]+)"/) ||
+                        html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/) ||
+                        html.match(/video[^>]*src="([^"]+\.mp4[^"]*)"/i)
+      
+      if (videoMatch) {
+        const videoUrl = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
+        return { videoUrl, title: `Instagram_${shortcode}` }
+      }
+    }
+  } catch {
+    // Continue to next method
+  }
+
+  // Method 2: Try direct page scraping with different headers
+  try {
+    const response = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      },
+    })
+
+    if (response.ok) {
+      const html = await response.text()
+      
+      // Try multiple patterns
+      const patterns = [
+        /"video_url":"([^"]+)"/,
+        /property="og:video" content="([^"]+)"/,
+        /property="og:video:secure_url" content="([^"]+)"/,
+        /"contentUrl":"([^"]+)"/,
+        /video_versions.*?"url":"([^"]+)"/,
+      ]
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern)
+        if (match) {
+          const videoUrl = match[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
+          return { videoUrl, title: `Instagram_${shortcode}` }
+        }
+      }
+    }
+  } catch {
+    // Continue to next method
+  }
+
+  // Method 3: Try reels URL format
+  try {
+    const reelResponse = await fetch(`https://www.instagram.com/reel/${shortcode}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    })
+
+    if (reelResponse.ok) {
+      const html = await reelResponse.text()
+      const videoMatch = html.match(/"video_url":"([^"]+)"/) ||
+                        html.match(/property="og:video" content="([^"]+)"/)
+      
+      if (videoMatch) {
+        const videoUrl = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '')
+        return { videoUrl, title: `Instagram_Reel_${shortcode}` }
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  throw new Error('Could not extract video. The post may be private, not a video, or Instagram has blocked the request.')
 }
 
 export async function POST(request: NextRequest) {
@@ -31,166 +121,102 @@ export async function POST(request: NextRequest) {
     const { url, format, quality } = await request.json()
 
     if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 })
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
-    const rapidApiKey = process.env.RAPIDAPI_KEY
-    if (!rapidApiKey) {
-      return NextResponse.json(
-        { error: "API key not configured. Please add RAPIDAPI_KEY to environment variables." },
-        { status: 500 }
-      )
+    const platform = detectPlatform(url)
+    if (!platform) {
+      return NextResponse.json({ error: 'Unsupported platform. Only YouTube and Instagram are supported.' }, { status: 400 })
     }
 
-    // Call the All Media Downloader API
-    const body = new URLSearchParams({ url })
-    
-    const response = await fetch(RAPIDAPI_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "x-rapidapi-host": RAPIDAPI_HOST,
-        "x-rapidapi-key": rapidApiKey,
-      },
-      body,
-    })
+    let downloadUrl: string
+    let filename: string
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return NextResponse.json(
-          { error: "Rate limit exceeded. Please try again later." },
-          { status: 429 }
-        )
+    if (platform === 'youtube') {
+      // Use OpenUtils YTDL API for YouTube - completely free, no API key needed
+      if (format === 'mp3') {
+        downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}`
+        filename = `youtube_audio_${Date.now()}.mp3`
+      } else {
+        const fmt = quality === '1080p' ? 'mp4-1080' : 'mp4-720'
+        downloadUrl = `${OPENUTILS_BASE}/api/stream/video?url=${encodeURIComponent(url)}&fmt=${fmt}`
+        filename = `youtube_video_${Date.now()}.mp4`
       }
-      return NextResponse.json(
-        { error: "Failed to process media. Please check the URL and try again." },
-        { status: 400 }
-      )
-    }
 
-    const data: ApiResponse = await response.json()
-
-    if (!data.ok || !data.formats || data.formats.length === 0) {
-      return NextResponse.json(
-        { error: "Could not extract download links from this URL." },
-        { status: 400 }
-      )
-    }
-
-    // Determine if we want audio only
-    const isAudioOnly = format === "mp3" || format === "audio"
-
-    // Find the best matching format
-    let downloadFormat: MediaFormat | undefined
-
-    if (isAudioOnly) {
-      // Look for audio formats
-      downloadFormat = data.formats.find(
-        (f) => f.ext === "mp3" || f.ext === "m4a" || f.acodec !== "none"
-      )
-      // If no audio format, get the first available
-      if (!downloadFormat) {
-        downloadFormat = data.formats[0]
-      }
+      return NextResponse.json({ 
+        downloadUrl,
+        filename,
+        platform,
+        direct: true // Flag to indicate direct download
+      })
     } else {
-      // Look for video formats matching requested quality
-      const qualityNum = quality?.replace("p", "") || "720"
-      
-      // Try to find exact quality match
-      downloadFormat = data.formats.find(
-        (f) =>
-          (f.format_id?.includes(qualityNum) ||
-            f.quality?.includes(qualityNum) ||
-            f.resolution?.includes(qualityNum)) &&
-          (f.ext === "mp4" || f.ext === "webm")
-      )
+      // Instagram
+      const igData = await getInstagramVideoUrl(url)
+      downloadUrl = igData.videoUrl
+      filename = `${igData.title}_${Date.now()}.mp4`
 
-      // If no exact match, find best available video
-      if (!downloadFormat) {
-        downloadFormat = data.formats.find(
-          (f) => f.ext === "mp4" || f.ext === "webm" || f.vcodec !== "none"
-        )
-      }
-
-      // Fallback to first format
-      if (!downloadFormat) {
-        downloadFormat = data.formats[0]
-      }
+      return NextResponse.json({ 
+        downloadUrl,
+        filename,
+        platform,
+        direct: false // Need to proxy Instagram downloads
+      })
     }
 
-    if (!downloadFormat?.url) {
-      return NextResponse.json(
-        { error: "No suitable download format found." },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      downloadUrl: downloadFormat.url,
-      format: isAudioOnly ? "mp3" : downloadFormat.ext || "mp4",
-      title: data.title || "download",
-      thumbnail: data.thumbnail,
-      duration: data.duration,
-      filesize: downloadFormat.filesize,
-    })
   } catch (error) {
-    console.error("Download error:", error)
+    console.error('Download error:', error)
     return NextResponse.json(
-      { error: "Failed to process download request. Please try again." },
+      { error: error instanceof Error ? error.message : 'Failed to process media' },
       { status: 500 }
     )
   }
 }
 
-// GET endpoint for proxying downloads
 export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams
+  const downloadUrl = searchParams.get('url')
+  const filename = searchParams.get('filename') || 'download.mp4'
+
+  if (!downloadUrl) {
+    return NextResponse.json({ error: 'Download URL is required' }, { status: 400 })
+  }
+
   try {
-    const searchParams = request.nextUrl.searchParams
-    const downloadUrl = searchParams.get("downloadUrl")
-    const filename = searchParams.get("filename") || "download"
-    const format = searchParams.get("format") || "mp4"
-
-    if (!downloadUrl) {
-      return NextResponse.json({ error: "Download URL is required" }, { status: 400 })
-    }
-
-    // Fetch the actual file
     const response = await fetch(downloadUrl, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "*/*",
-        "Accept-Encoding": "identity",
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.instagram.com/',
       },
     })
 
     if (!response.ok) {
-      throw new Error("Failed to fetch file")
+      throw new Error(`Failed to fetch media: ${response.status}`)
     }
 
-    const contentType =
-      format === "mp3" || format === "m4a" ? "audio/mpeg" : "video/mp4"
-    const sanitizedFilename = filename
-      .replace(/[^\w\s-]/g, "")
-      .substring(0, 100)
-      .trim() || "download"
+    const contentType = response.headers.get('content-type') || 'video/mp4'
+    const contentLength = response.headers.get('content-length')
 
-    const headers = new Headers()
-    headers.set("Content-Type", contentType)
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename="${sanitizedFilename}.${format}"`
-    )
+    const headers = new Headers({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-cache',
+    })
 
-    const contentLength = response.headers.get("content-length")
     if (contentLength) {
-      headers.set("Content-Length", contentLength)
+      headers.set('Content-Length', contentLength)
     }
 
-    return new NextResponse(response.body, { headers })
+    return new NextResponse(response.body, {
+      status: 200,
+      headers,
+    })
   } catch (error) {
-    console.error("File fetch error:", error)
-    return NextResponse.json({ error: "Failed to download file" }, { status: 500 })
+    console.error('Stream error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to download media' },
+      { status: 500 }
+    )
   }
 }

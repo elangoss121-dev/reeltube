@@ -11,14 +11,6 @@ import { AlertCircle, RotateCcw } from "lucide-react"
 function detectPlatform(url: string): string | null {
   if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube"
   if (url.includes("instagram.com")) return "instagram"
-  if (url.includes("tiktok.com")) return "tiktok"
-  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter"
-  if (url.includes("facebook.com") || url.includes("fb.watch")) return "facebook"
-  if (url.includes("vimeo.com")) return "vimeo"
-  if (url.includes("reddit.com")) return "reddit"
-  if (url.includes("pinterest.com") || url.includes("pin.it")) return "pinterest"
-  if (url.includes("soundcloud.com")) return "soundcloud"
-  if (url.includes("twitch.tv")) return "twitch"
   return null
 }
 
@@ -41,7 +33,7 @@ export function MediaDownloader() {
     const platform = detectPlatform(url)
 
     if (!platform) {
-      setError("Unsupported URL. Supported platforms: YouTube, Instagram, TikTok, Twitter/X, Facebook, Vimeo, Reddit, Pinterest, SoundCloud, Twitch")
+      setError("Unsupported URL. Only YouTube and Instagram links are supported.")
       setIsLoading(false)
       return
     }
@@ -104,27 +96,30 @@ export function MediaDownloader() {
 
       const data = await response.json()
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
         throw new Error(data.error || "Download failed")
       }
 
       setStatus("preparing")
 
-      // Trigger the download directly from the Cobalt URL
-      const downloadUrl = data.downloadUrl
-      const filename = media?.title || "download"
-      const fileFormat = data.format || format.format.toLowerCase()
+      const { downloadUrl, filename, direct, platform } = data
 
-      // Create a hidden link and trigger download
-      const link = document.createElement("a")
-      link.href = downloadUrl
-      link.download = `${filename.replace(/[^\w\s-]/g, "").substring(0, 50)}.${fileFormat}`
-      link.target = "_blank"
-      link.rel = "noopener noreferrer"
-      
-      // For cross-origin downloads, we need to fetch and create a blob
-      try {
-        const fileResponse = await fetch(`/api/download?downloadUrl=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(filename)}&format=${fileFormat}`)
+      if (direct && platform === "youtube") {
+        // For YouTube, OpenUtils provides direct streaming URLs
+        // Open in new tab for direct download
+        const link = document.createElement("a")
+        link.href = downloadUrl
+        link.download = filename
+        link.target = "_blank"
+        link.rel = "noopener noreferrer"
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } else {
+        // For Instagram, we need to proxy through our API
+        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(filename)}`
+        
+        const fileResponse = await fetch(proxyUrl)
         
         if (!fileResponse.ok) {
           throw new Error("Failed to download file")
@@ -133,18 +128,15 @@ export function MediaDownloader() {
         const blob = await fileResponse.blob()
         const blobUrl = window.URL.createObjectURL(blob)
         
+        const link = document.createElement("a")
         link.href = blobUrl
+        link.download = filename
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
         
-        // Clean up blob URL after a delay
+        // Clean up blob URL
         setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
-      } catch {
-        // Fallback: try direct link
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
       }
 
       setStatus("complete")
@@ -155,7 +147,7 @@ export function MediaDownloader() {
       setIsDownloading(false)
       setDownloadingFormat(null)
     }
-  }, [currentUrl, media])
+  }, [currentUrl])
 
   const handleReset = useCallback(() => {
     setMedia(null)
@@ -175,7 +167,7 @@ export function MediaDownloader() {
           Download Videos & Audio
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
-          Paste any link from YouTube, Instagram, TikTok, Twitter, and more. Download as MP4 or MP3 instantly.
+          Paste any YouTube or Instagram link. Download as MP4 video or MP3 audio instantly.
         </p>
       </div>
 
@@ -183,15 +175,19 @@ export function MediaDownloader() {
       <UrlInput onSubmit={handleUrlSubmit} isLoading={isLoading} />
 
       {/* Supported Platforms */}
-      <div className="flex flex-wrap justify-center gap-2 mt-4 text-xs text-muted-foreground">
-        <span className="px-2 py-1 bg-secondary rounded">YouTube</span>
-        <span className="px-2 py-1 bg-secondary rounded">Instagram</span>
-        <span className="px-2 py-1 bg-secondary rounded">TikTok</span>
-        <span className="px-2 py-1 bg-secondary rounded">Twitter/X</span>
-        <span className="px-2 py-1 bg-secondary rounded">Facebook</span>
-        <span className="px-2 py-1 bg-secondary rounded">Vimeo</span>
-        <span className="px-2 py-1 bg-secondary rounded">Reddit</span>
-        <span className="px-2 py-1 bg-secondary rounded">Pinterest</span>
+      <div className="flex flex-wrap justify-center gap-3 mt-4 text-sm text-muted-foreground">
+        <span className="px-3 py-1.5 bg-secondary rounded-full flex items-center gap-2">
+          <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+          </svg>
+          YouTube
+        </span>
+        <span className="px-3 py-1.5 bg-secondary rounded-full flex items-center gap-2">
+          <svg className="w-4 h-4 text-pink-500" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+          Instagram
+        </span>
       </div>
 
       {/* Error Message */}
@@ -241,7 +237,7 @@ export function MediaDownloader() {
         <div className="mt-16 grid sm:grid-cols-3 gap-6">
           <FeatureCard
             title="No Restrictions"
-            description="Download from any public video or audio without limitations."
+            description="Download any public video or audio without limitations."
           />
           <FeatureCard
             title="Multiple Formats"

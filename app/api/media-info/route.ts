@@ -1,59 +1,108 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
 
 export const maxDuration = 60
 
-const RAPIDAPI_HOST = "all-media-downloader1.p.rapidapi.com"
-const RAPIDAPI_URL = `https://${RAPIDAPI_HOST}/all`
+const OPENUTILS_BASE = 'https://ytdl.openutils.net'
 
-interface MediaFormat {
-  format_id: string
-  ext: string
-  filesize?: number
-  url: string
+function detectPlatform(url: string): string | null {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
+  if (url.includes('instagram.com')) return 'instagram'
+  return null
 }
 
-interface ApiResponse {
-  ok: boolean
-  source?: string
-  title?: string
-  thumbnail?: string
-  duration?: number
-  formats?: MediaFormat[]
+function extractInstagramShortcode(url: string): string | null {
+  const patterns = [
+    /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/,
+    /instagram\.com\/stories\/[^/]+\/(\d+)/,
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]
+  }
+  return null
 }
 
-function detectPlatform(url: string): string {
-  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube"
-  if (url.includes("instagram.com")) return "instagram"
-  if (url.includes("tiktok.com")) return "tiktok"
-  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter"
-  if (url.includes("facebook.com") || url.includes("fb.watch")) return "facebook"
-  if (url.includes("vimeo.com")) return "vimeo"
-  if (url.includes("reddit.com")) return "reddit"
-  if (url.includes("pinterest.com") || url.includes("pin.it")) return "pinterest"
-  if (url.includes("soundcloud.com")) return "soundcloud"
-  if (url.includes("twitch.tv")) return "twitch"
-  return "other"
-}
+async function getInstagramInfo(url: string) {
+  const shortcode = extractInstagramShortcode(url)
+  if (!shortcode) {
+    throw new Error('Invalid Instagram URL')
+  }
 
-function extractVideoId(url: string, platform: string): string {
+  // Try to scrape the page for metadata
   try {
-    const urlObj = new URL(url)
-    
-    if (platform === "youtube") {
-      const videoId = urlObj.searchParams.get("v")
-      if (videoId) return videoId
+    const response = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    })
+
+    if (response.ok) {
+      const html = await response.text()
       
-      if (url.includes("youtu.be/")) {
-        return urlObj.pathname.slice(1).split("/")[0]
-      }
-      if (url.includes("/shorts/")) {
-        return urlObj.pathname.split("/shorts/")[1]?.split("/")[0] || ""
+      const titleMatch = html.match(/property="og:title" content="([^"]+)"/)
+      const thumbnailMatch = html.match(/property="og:image" content="([^"]+)"/)
+      const hasVideo = html.includes('"video_url"') || html.includes('og:video') || html.includes('"is_video":true')
+      
+      return {
+        id: shortcode,
+        title: titleMatch ? titleMatch[1].slice(0, 100) : `Instagram Video`,
+        thumbnail: thumbnailMatch ? thumbnailMatch[1] : '',
+        duration: '',
+        author: 'Instagram',
+        platform: 'instagram',
+        hasVideo: hasVideo
       }
     }
-    
-    return urlObj.pathname.split("/").filter(Boolean).pop() || ""
   } catch {
-    return ""
+    // Fallback to basic info
+  }
+
+  // Return basic info - we'll attempt download anyway
+  return {
+    id: shortcode,
+    title: `Instagram Video`,
+    thumbnail: '',
+    duration: '',
+    author: 'Instagram',
+    platform: 'instagram',
+    hasVideo: true
+  }
+}
+
+async function getYouTubeInfo(url: string) {
+  const response = await fetch(`${OPENUTILS_BASE}/api/info?url=${encodeURIComponent(url)}`, {
+    headers: {
+      'Accept': 'application/json',
+    },
+  })
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch YouTube video info')
+  }
+
+  const data = await response.json()
+  
+  if (data.error) {
+    throw new Error(data.error)
+  }
+
+  // Format duration from seconds
+  let durationStr = ''
+  if (data.duration) {
+    const mins = Math.floor(data.duration / 60)
+    const secs = data.duration % 60
+    durationStr = `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  return {
+    id: data.id || '',
+    title: data.title || 'YouTube Video',
+    thumbnail: data.thumbnail || '',
+    duration: durationStr,
+    author: data.uploader || data.channel || 'YouTube',
+    platform: 'youtube',
+    hasVideo: true
   }
 }
 
@@ -62,80 +111,53 @@ export async function POST(request: NextRequest) {
     const { url } = await request.json()
 
     if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 })
-    }
-
-    const rapidApiKey = process.env.RAPIDAPI_KEY
-    if (!rapidApiKey) {
-      return NextResponse.json(
-        { error: "API key not configured. Please add RAPIDAPI_KEY to environment variables." },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
     const platform = detectPlatform(url)
-    const videoId = extractVideoId(url, platform)
-
-    // Call the All Media Downloader API to get metadata
-    const body = new URLSearchParams({ url })
     
-    const response = await fetch(RAPIDAPI_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "x-rapidapi-host": RAPIDAPI_HOST,
-        "x-rapidapi-key": rapidApiKey,
-      },
-      body,
-    })
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return NextResponse.json(
-          { error: "Rate limit exceeded. Please try again later." },
-          { status: 429 }
-        )
-      }
+    if (!platform) {
       return NextResponse.json(
-        { error: "Failed to fetch media information. Please check the URL." },
+        { error: 'Unsupported platform. Only YouTube and Instagram are supported.' },
         { status: 400 }
       )
     }
 
-    const data: ApiResponse = await response.json()
+    let info
 
-    if (!data.ok) {
-      return NextResponse.json(
-        { error: "Could not extract information from this URL." },
-        { status: 400 }
-      )
-    }
-
-    // Format duration
-    let durationStr = ""
-    if (data.duration) {
-      const mins = Math.floor(data.duration / 60)
-      const secs = data.duration % 60
-      durationStr = `${mins}:${secs.toString().padStart(2, "0")}`
+    if (platform === 'youtube') {
+      info = await getYouTubeInfo(url)
+    } else {
+      info = await getInstagramInfo(url)
     }
 
     return NextResponse.json({
       success: true,
       platform,
-      data: {
-        id: videoId,
-        title: data.title || "Untitled",
-        thumbnail: data.thumbnail || "",
-        duration: durationStr,
-        author: "",
-        formats: data.formats?.length || 0,
-      },
+      data: info
     })
   } catch (error) {
-    console.error("Media info error:", error)
+    console.error('Media info error:', error)
     return NextResponse.json(
-      { error: "Failed to fetch media information. Please try again." },
+      { error: error instanceof Error ? error.message : 'Failed to fetch media info' },
       { status: 500 }
     )
   }
+}
+
+// Also support GET for direct URL passing
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams
+  const url = searchParams.get('url')
+
+  if (!url) {
+    return NextResponse.json({ error: 'URL is required' }, { status: 400 })
+  }
+
+  // Reuse POST logic
+  const fakeRequest = {
+    json: async () => ({ url })
+  } as NextRequest
+  
+  return POST(fakeRequest)
 }

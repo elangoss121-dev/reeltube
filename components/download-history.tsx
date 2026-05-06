@@ -10,6 +10,7 @@ export interface HistoryItem extends MediaInfo {
   format: string
   quality: string
   downloadedAt: Date
+  url?: string
 }
 
 interface DownloadHistoryProps {

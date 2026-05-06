@@ -9,26 +9,6 @@ import { DownloadHistory, HistoryItem } from "./download-history"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, RotateCcw } from "lucide-react"
 
-// Demo data for showcasing the UI
-const demoMedia: Record<string, MediaInfo> = {
-  youtube: {
-    id: "yt-demo",
-    platform: "youtube",
-    title: "Amazing Nature Documentary - 4K Ultra HD Wildlife Footage",
-    thumbnail: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=640&h=360&fit=crop",
-    duration: "12:34",
-    author: "Nature Channel",
-  },
-  instagram: {
-    id: "ig-demo",
-    platform: "instagram",
-    title: "Incredible sunset timelapse from the mountains",
-    thumbnail: "https://images.unsplash.com/photo-1495616811223-4d98c6e9c869?w=640&h=360&fit=crop",
-    duration: "0:45",
-    author: "@nature_photography",
-  },
-}
-
 function detectPlatform(url: string): "youtube" | "instagram" | null {
   if (url.includes("youtube.com") || url.includes("youtu.be")) {
     return "youtube"
@@ -40,6 +20,7 @@ function detectPlatform(url: string): "youtube" | "instagram" | null {
 }
 
 export function MediaDownloader() {
+  const [currentUrl, setCurrentUrl] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [media, setMedia] = useState<MediaInfo | null>(null)
   const [status, setStatus] = useState<ProgressStatus | null>(null)
@@ -76,6 +57,7 @@ export function MediaDownloader() {
     setMedia(null)
     setStatus(null)
     setIsLoading(true)
+    setCurrentUrl(url)
 
     const platform = detectPlatform(url)
 
@@ -85,51 +67,116 @@ export function MediaDownloader() {
       return
     }
 
-    // Simulate processing stages
-    setStatus("analyzing")
-    await new Promise((r) => setTimeout(r, 800))
+    try {
+      setStatus("analyzing")
+      
+      const response = await fetch("/api/media-info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      })
 
-    setStatus("fetching")
-    await new Promise((r) => setTimeout(r, 1000))
+      const data = await response.json()
 
-    // Use demo data based on platform
-    setMedia(demoMedia[platform])
-    setStatus("complete")
-    setIsLoading(false)
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to fetch media information")
+      }
+
+      setStatus("fetching")
+      
+      // Small delay for UX
+      await new Promise((r) => setTimeout(r, 500))
+
+      setMedia({
+        id: data.data.id,
+        platform: data.platform,
+        title: data.data.title,
+        thumbnail: data.data.thumbnail,
+        duration: data.data.duration,
+        author: data.data.author,
+      })
+      
+      setStatus("complete")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch media information")
+      setStatus(null)
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
   const handleDownload = useCallback(async (format: FormatOption) => {
-    if (!media) return
+    if (!media || !currentUrl) return
 
     setIsDownloading(true)
     setDownloadingFormat(format.id)
     setStatus("converting")
 
-    await new Promise((r) => setTimeout(r, 1500))
+    try {
+      // Build download URL with parameters
+      const params = new URLSearchParams({
+        url: currentUrl,
+        format: format.format.toLowerCase(),
+        quality: format.quality,
+      })
 
-    setStatus("preparing")
-    await new Promise((r) => setTimeout(r, 800))
+      setStatus("preparing")
 
-    // Add to history
-    const historyItem: HistoryItem = {
-      ...media,
-      format: format.format,
-      quality: format.quality,
-      downloadedAt: new Date(),
+      // Create a link and trigger download
+      const downloadUrl = `/api/download?${params.toString()}`
+      
+      // Use fetch to get the file and trigger download
+      const response = await fetch(downloadUrl)
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Download failed" }))
+        throw new Error(errorData.error || "Download failed")
+      }
+
+      // Get the blob and create download link
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      
+      // Get filename from content-disposition header or generate one
+      const contentDisposition = response.headers.get("content-disposition")
+      let filename = `${media.title.slice(0, 50)}.${format.format.toLowerCase()}`
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/)
+        if (match) filename = match[1]
+      }
+      
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+
+      // Add to history
+      const historyItem: HistoryItem = {
+        ...media,
+        format: format.format,
+        quality: format.quality,
+        downloadedAt: new Date(),
+        url: currentUrl,
+      }
+      setHistory((prev) => [historyItem, ...prev.slice(0, 9)])
+
+      setStatus("complete")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed")
+      setStatus("complete")
+    } finally {
+      setIsDownloading(false)
+      setDownloadingFormat(null)
     }
-    setHistory((prev) => [historyItem, ...prev.slice(0, 9)])
-
-    setStatus("complete")
-    setIsDownloading(false)
-
-    // Simulate download (in a real app, this would trigger actual file download)
-    const link = document.createElement("a")
-    link.href = media.thumbnail
-    link.download = `${media.title.slice(0, 50)}.${format.format.toLowerCase()}`
-    link.click()
-  }, [media])
+  }, [media, currentUrl])
 
   const handleRedownload = useCallback((item: HistoryItem) => {
+    if (item.url) {
+      setCurrentUrl(item.url)
+    }
     setMedia(item)
     setStatus("complete")
     setError(null)
@@ -147,6 +194,7 @@ export function MediaDownloader() {
     setIsLoading(false)
     setIsDownloading(false)
     setDownloadingFormat(null)
+    setCurrentUrl("")
   }, [])
 
   return (
@@ -166,10 +214,10 @@ export function MediaDownloader() {
 
       {/* Error Message */}
       {error && !isLoading && (
-        <div className="flex items-center justify-center gap-2 mt-6 text-destructive">
-          <AlertCircle className="h-5 w-5" />
-          <span className="text-sm">{error}</span>
-          <Button variant="ghost" size="sm" onClick={handleReset}>
+        <div className="flex items-center justify-center gap-2 mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <AlertCircle className="h-5 w-5 text-destructive" />
+          <span className="text-sm text-destructive">{error}</span>
+          <Button variant="ghost" size="sm" onClick={handleReset} className="ml-2">
             <RotateCcw className="h-4 w-4 mr-1" />
             Try again
           </Button>

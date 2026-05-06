@@ -8,7 +8,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'MediaGrab - Instagram & YouTube Downloader',
+  title: 'ReelTube - Instagram & YouTube Downloader',
   description: 'Download Instagram Reels, Posts and YouTube videos in MP4 or MP3 format. Fast, free, and easy to use.',
   generator: 'v0.app',
   icons: {

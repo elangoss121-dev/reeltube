@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Download } from "lucide-react"
+import Image from "next/image"
 
 export function Footer() {
   return (
@@ -7,10 +7,13 @@ export function Footer() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Download className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-semibold text-foreground">MediaGrab</span>
+            <Image
+              src="/logo.png"
+              alt="ReelTube Logo"
+              width={160}
+              height={45}
+              className="h-11 w-auto"
+            />
           </div>
           <nav className="flex items-center gap-6">
             <Link
@@ -38,7 +41,7 @@ export function Footer() {
             Download for personal use only. We do not store any media on our servers.
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            MediaGrab {new Date().getFullYear()}. All rights reserved.
+            ReelTube {new Date().getFullYear()}. All rights reserved.
           </p>
           <p className="text-xs text-muted-foreground mt-2">
             Made by{" "}

@@ -47,7 +47,21 @@ export async function POST(request: NextRequest) {
       if (format === 'mp3') {
         downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}`
       } else {
-        const fmt = quality === '1080p' ? 'mp4-1080' : quality === '480p' ? 'mp4-480' : 'mp4-720'
+        // Map quality to format code
+        let fmt = 'mp4-720' // default
+        if (quality.includes('4K') || quality.includes('2160')) {
+          fmt = 'mp4-2160'
+        } else if (quality.includes('2K') || quality.includes('1440')) {
+          fmt = 'mp4-1440'
+        } else if (quality.includes('1080')) {
+          fmt = 'mp4-1080'
+        } else if (quality.includes('720')) {
+          fmt = 'mp4-720'
+        } else if (quality.includes('480')) {
+          fmt = 'mp4-480'
+        } else if (quality.includes('360')) {
+          fmt = 'mp4-360'
+        }
         downloadUrl = `${OPENUTILS_BASE}/api/stream/video?url=${encodeURIComponent(url)}&fmt=${fmt}`
       }
       

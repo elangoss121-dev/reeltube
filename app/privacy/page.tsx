@@ -13,7 +13,7 @@ export default function PrivacyPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-4">Introduction</h2>
             <p className="text-muted-foreground mb-4">
-              MediaGrab (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) is committed to protecting your privacy. 
+              ReelTube (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) is committed to protecting your privacy. 
               This Privacy Policy explains how we collect, use, and safeguard your information 
               when you use our service.
             </p>

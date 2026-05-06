@@ -22,8 +22,10 @@ interface FormatSelectorProps {
 }
 
 const youtubeFormats: FormatOption[] = [
-  { id: "mp4-1080", type: "video", quality: "1080p", format: "MP4", size: "~50MB" },
-  { id: "mp4-720", type: "video", quality: "720p", format: "MP4", size: "~30MB" },
+  { id: "mp4-4k", type: "video", quality: "4K (2160p)", format: "MP4", size: "~200MB" },
+  { id: "mp4-2k", type: "video", quality: "2K (1440p)", format: "MP4", size: "~100MB" },
+  { id: "mp4-1080", type: "video", quality: "1080p HD", format: "MP4", size: "~50MB" },
+  { id: "mp4-720", type: "video", quality: "720p HD", format: "MP4", size: "~30MB" },
   { id: "mp4-480", type: "video", quality: "480p", format: "MP4", size: "~15MB" },
   { id: "mp4-360", type: "video", quality: "360p", format: "MP4", size: "~8MB" },
   { id: "mp3-320", type: "audio", quality: "320kbps", format: "MP3", size: "~5MB" },
@@ -32,8 +34,8 @@ const youtubeFormats: FormatOption[] = [
 ]
 
 const instagramFormats: FormatOption[] = [
+  { id: "mp4-best", type: "video", quality: "Best Quality", format: "MP4", size: "~30MB" },
   { id: "mp4-hd", type: "video", quality: "HD", format: "MP4", size: "~20MB" },
-  { id: "mp4-sd", type: "video", quality: "SD", format: "MP4", size: "~8MB" },
   { id: "mp3-audio", type: "audio", quality: "Audio", format: "MP3", size: "~2MB" },
 ]
 

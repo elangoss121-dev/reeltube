@@ -36,9 +36,7 @@ async function getInstagramInfo(url: string) {
 
   // Try instagram-url-direct package first
   try {
-    console.log('[v0] media-info: Fetching Instagram URL:', url)
     const data = await instagramGetUrl(url)
-    console.log('[v0] media-info: Instagram data received:', JSON.stringify(data, null, 2))
     
     if (data && data.url_list && data.url_list.length > 0) {
       hasVideo = data.media_details?.some(m => m.type === 'video') || true
@@ -59,8 +57,8 @@ async function getInstagramInfo(url: string) {
         fullname = data.post_info.owner_fullname
       }
     }
-  } catch (e) {
-    console.log('[v0] media-info: instagram-url-direct failed:', e instanceof Error ? e.message : e)
+  } catch {
+    // instagram-url-direct failed, try fallback
   }
 
   // Fallback: Try direct page scraping

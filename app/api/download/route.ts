@@ -60,27 +60,37 @@ export async function POST(request: NextRequest) {
         }
         
         if (audioBitrate === 'flac') {
-          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&fmt=flac`
+          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&fmt=flac&precise=true`
         } else {
-          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&bitrate=${audioBitrate}`
+          downloadUrl = `${OPENUTILS_BASE}/api/stream?url=${encodeURIComponent(url)}&bitrate=${audioBitrate}&precise=true`
         }
       } else {
-        // Map quality to format code
-        let fmt = 'mp4-720' // default
+        // Map quality to format code - use itag for precise extraction
+        let itag = '22' // default 720p
+        let fmt = 'mp4-720'
+        
         if (quality.includes('4K') || quality.includes('2160')) {
+          itag = '313' // 2160p webm or 401 for mp4
           fmt = 'mp4-2160'
         } else if (quality.includes('2K') || quality.includes('1440')) {
+          itag = '308' // 1440p
           fmt = 'mp4-1440'
         } else if (quality.includes('1080')) {
+          itag = '137' // 1080p mp4
           fmt = 'mp4-1080'
         } else if (quality.includes('720')) {
+          itag = '22' // 720p mp4 with audio
           fmt = 'mp4-720'
         } else if (quality.includes('480')) {
+          itag = '135' // 480p
           fmt = 'mp4-480'
         } else if (quality.includes('360')) {
+          itag = '18' // 360p mp4 with audio
           fmt = 'mp4-360'
         }
-        downloadUrl = `${OPENUTILS_BASE}/api/stream/video?url=${encodeURIComponent(url)}&fmt=${fmt}`
+        
+        // Use the streaming endpoint with precise extraction
+        downloadUrl = `${OPENUTILS_BASE}/api/stream/video?url=${encodeURIComponent(url)}&fmt=${fmt}&itag=${itag}&precise=true`
       }
       
       filename = `${safeTitle}.${fileExtension}`
@@ -98,9 +108,7 @@ export async function POST(request: NextRequest) {
       let ownerUsername = ''
 
       try {
-        console.log('[v0] Fetching Instagram URL:', url)
         data = await instagramGetUrl(url)
-        console.log('[v0] Instagram data received:', JSON.stringify(data, null, 2))
         
         if (data && data.url_list && data.url_list.length > 0) {
           // Find a video URL from media_details or url_list
@@ -119,8 +127,8 @@ export async function POST(request: NextRequest) {
             ownerUsername = data.post_info.owner_username
           }
         }
-      } catch (e) {
-        console.log('[v0] instagram-url-direct failed:', e instanceof Error ? e.message : e)
+      } catch {
+        // instagram-url-direct failed, try fallback
       }
 
       // Fallback: Try direct page scraping

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { instagramGetUrl } from 'instagram-url-direct'
+import snapinsta from 'snapinsta'
 
 export const maxDuration = 60
 
@@ -61,7 +62,24 @@ async function getInstagramInfo(url: string) {
     // instagram-url-direct failed, try fallback
   }
 
-  // Fallback: Try direct page scraping
+  // Fallback 1: Try snapinsta package
+  if (!hasVideo) {
+    try {
+      const snapLinks = await snapinsta.getLinks(url)
+      if (snapLinks && snapLinks.length > 0) {
+        const videoItem = snapLinks.find((item: { url: string; type: string }) => 
+          item.type === 'video/mp4' || item.url.includes('.mp4')
+        )
+        if (videoItem) {
+          hasVideo = true
+        }
+      }
+    } catch {
+      // snapinsta failed, try next fallback
+    }
+  }
+
+  // Fallback 2: Try direct page scraping
   if (!hasVideo) {
     try {
       const pageResponse = await fetch(url, {

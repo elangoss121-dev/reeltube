@@ -49,8 +49,16 @@ export function MediaDownloader() {
 
       const data = await response.json()
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to fetch media information")
+      if (!response.ok) {
+        throw new Error(data.error || `Server error: ${response.status}`)
+      }
+      
+      if (data.error) {
+        throw new Error(data.error)
+      }
+      
+      if (!data.data) {
+        throw new Error("No media data received from server")
       }
 
       setStatus("fetching")
@@ -83,22 +91,42 @@ export function MediaDownloader() {
     setError(null)
 
     try {
-      // Call the download API to get the direct URL
-      const response = await fetch("/api/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: currentUrl,
-          format: format.format.toLowerCase(),
-          quality: format.quality,
-          title: media.title,
-        }),
-      })
+      // Call the download API with retry logic
+      let response
+      let data
+      let lastError: Error | null = null
 
-      const data = await response.json()
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await fetch("/api/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: currentUrl,
+              format: format.format.toLowerCase(),
+              quality: format.quality,
+              title: media.title,
+            }),
+          })
 
-      if (!response.ok) {
-        throw new Error(data.error || "Download failed")
+          data = await response.json()
+
+          if (response.ok && data.downloadUrl) {
+            break // Success
+          }
+          
+          lastError = new Error(data.error || `HTTP ${response.status}`)
+          
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 1000)) // Wait before retry
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e : new Error("Network error")
+        }
+      }
+
+      if (!data || !data.downloadUrl) {
+        throw lastError || new Error("Failed to get download URL")
       }
 
       setStatus("preparing")

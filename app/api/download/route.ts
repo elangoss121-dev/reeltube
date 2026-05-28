@@ -231,42 +231,87 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(downloadUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.instagram.com/',
-      },
-    })
+    // Determine content type based on format
+    let contentType = 'video/mp4'
+    if (format === 'flac') contentType = 'audio/flac'
+    else if (format === 'mp3') contentType = 'audio/mpeg'
+    else if (format === 'mp4') contentType = 'video/mp4'
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch media: ${response.status}`)
+    // Fetch with proper headers and error handling
+    let response: Response | null = null
+    let lastError: Error | null = null
+
+    // Try fetching up to 2 times for reliability
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(downloadUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.instagram.com/',
+            'Connection': 'keep-alive',
+          },
+          timeout: 30000,
+        })
+
+        if (response.ok) break
+        lastError = new Error(`HTTP ${response.status}`)
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error('Unknown fetch error')
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 500)) // Wait before retry
+        }
+      }
     }
 
-    const contentType = format === 'flac' ? 'audio/flac' : format === 'mp3' ? 'audio/mpeg' : (response.headers.get('content-type') || 'video/mp4')
+    if (!response || !response.ok) {
+      throw lastError || new Error('Failed to fetch media after retries')
+    }
+
+    // Get content length if available
     const contentLength = response.headers.get('content-length')
 
-    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_')
-    const encodedFilename = encodeURIComponent(filename)
+    // Sanitize filename for header
+    const safeFilename = filename
+      .replace(/[^\w\s.-]/g, '_')
+      .replace(/\s+/g, '_')
+      .slice(0, 100)
     
-    const headers = new Headers({
+    const encodedFilename = encodeURIComponent(filename)
+
+    // Create response headers
+    const responseHeaders = new Headers({
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     })
 
-    if (contentLength) {
-      headers.set('Content-Length', contentLength)
+    if (contentLength && parseInt(contentLength) > 0) {
+      responseHeaders.set('Content-Length', contentLength)
     }
 
-    return new NextResponse(response.body, {
-      status: 200,
-      headers,
-    })
+    // Stream the response body directly
+    if (response.body) {
+      return new NextResponse(response.body, {
+        status: 200,
+        headers: responseHeaders,
+      })
+    } else {
+      // Fallback: read body as buffer
+      const buffer = await response.arrayBuffer()
+      return new NextResponse(buffer, {
+        status: 200,
+        headers: responseHeaders,
+      })
+    }
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to download media'
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to download media' },
+      { error: errorMsg },
       { status: 500 }
     )
   }

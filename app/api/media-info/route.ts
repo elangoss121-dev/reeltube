@@ -133,38 +133,72 @@ async function getInstagramInfo(url: string) {
 }
 
 async function getYouTubeInfo(url: string) {
-  const response = await fetch(`${OPENUTILS_BASE}/api/info?url=${encodeURIComponent(url)}`, {
-    headers: {
-      'Accept': 'application/json',
-    },
-  })
-  
-  if (!response.ok) {
-    throw new Error('Failed to fetch YouTube video info')
-  }
+  try {
+    // Extract video ID from URL
+    let videoId = ''
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+      /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,
+    ]
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern)
+      if (match) {
+        videoId = match[1]
+        break
+      }
+    }
 
-  const data = await response.json()
-  
-  if (data.error) {
-    throw new Error(data.error)
-  }
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL format')
+    }
 
-  // Format duration from seconds
-  let durationStr = ''
-  if (data.duration) {
-    const mins = Math.floor(data.duration / 60)
-    const secs = data.duration % 60
-    durationStr = `${mins}:${secs.toString().padStart(2, '0')}`
-  }
+    const response = await fetch(`${OPENUTILS_BASE}/api/info?url=${encodeURIComponent(url)}`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      timeout: 10000,
+    })
+    
+    if (!response.ok) {
+      throw new Error(`API returned status ${response.status}`)
+    }
 
-  return {
-    id: data.id || '',
-    title: data.title || 'YouTube Video',
-    thumbnail: data.thumbnail || '',
-    duration: durationStr,
-    author: data.uploader || data.channel || 'YouTube',
-    platform: 'youtube',
-    hasVideo: true
+    const data = await response.json()
+    
+    if (data.error) {
+      throw new Error(data.error)
+    }
+
+    // Format duration from seconds
+    let durationStr = ''
+    if (data.duration) {
+      const totalSeconds = Math.round(data.duration)
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const secs = totalSeconds % 60
+      
+      if (hours > 0) {
+        durationStr = `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      } else {
+        durationStr = `${minutes}:${secs.toString().padStart(2, '0')}`
+      }
+    }
+
+    return {
+      id: data.id || videoId,
+      title: data.title || 'YouTube Video',
+      thumbnail: data.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      duration: durationStr,
+      author: data.uploader || data.channel || 'YouTube Creator',
+      platform: 'youtube',
+      hasVideo: true
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to fetch YouTube info'
+    throw new Error(`YouTube error: ${errorMsg}`)
   }
 }
 

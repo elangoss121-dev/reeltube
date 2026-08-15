@@ -62,7 +62,6 @@ export function MediaDownloader() {
       }
 
       setStatus("fetching")
-      await new Promise((r) => setTimeout(r, 300))
 
       setMedia({
         id: data.data.id,
@@ -91,94 +90,50 @@ export function MediaDownloader() {
     setError(null)
 
     try {
-      // Call the download API with retry logic
-      let response
-      let data
-      let lastError: Error | null = null
+      const response = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: currentUrl,
+          format: format.id,
+          quality: format.quality,
+          title: media.title,
+        }),
+      })
 
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          response = await fetch("/api/download", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              url: currentUrl,
-              format: format.format.toLowerCase(),
-              quality: format.quality,
-              title: media.title,
-            }),
-          })
+      const data = await response.json()
 
-          data = await response.json()
-
-          if (response.ok && data.downloadUrl) {
-            break // Success
-          }
-          
-          lastError = new Error(data.error || `HTTP ${response.status}`)
-          
-          if (attempt === 0) {
-            await new Promise(r => setTimeout(r, 1000)) // Wait before retry
-          }
-        } catch (e) {
-          lastError = e instanceof Error ? e : new Error("Network error")
-        }
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Failed to process download request")
       }
 
-      if (!data || !data.downloadUrl) {
-        throw lastError || new Error("Failed to get download URL")
+      if (!data.downloadUrl) {
+        throw new Error("Failed to get download URL")
       }
 
       setStatus("preparing")
 
-      const { downloadUrl, filename, direct, platform } = data
-
-      // Use the filename from server (based on video title)
+      const { downloadUrl, filename } = data
       const downloadFilename = filename || `${media.title || 'download'}.${format.format.toLowerCase() === 'mp3' ? 'mp3' : 'mp4'}`
-
-      if (direct && platform === "youtube") {
-        // For YouTube, we still need to fetch through proxy for proper filename
-        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(downloadFilename)}&format=${format.format.toLowerCase()}`
-        
-        const fileResponse = await fetch(proxyUrl)
-        
-        if (!fileResponse.ok) {
-          throw new Error("Failed to download file")
-        }
-
-        const blob = await fileResponse.blob()
-        const blobUrl = window.URL.createObjectURL(blob)
-        
-        const link = document.createElement("a")
-        link.href = blobUrl
-        link.download = downloadFilename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
-      } else {
-        // For Instagram, proxy through our API
-        const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(downloadFilename)}&format=${format.format.toLowerCase()}`
-        
-        const fileResponse = await fetch(proxyUrl)
-        
-        if (!fileResponse.ok) {
-          throw new Error("Failed to download file")
-        }
-
-        const blob = await fileResponse.blob()
-        const blobUrl = window.URL.createObjectURL(blob)
-        
-        const link = document.createElement("a")
-        link.href = blobUrl
-        link.download = downloadFilename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
+      const proxyUrl = `/api/download?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(downloadFilename)}&format=${format.format.toLowerCase()}`
+      
+      const fileResponse = await fetch(proxyUrl)
+      
+      if (!fileResponse.ok) {
+        throw new Error("Failed to download media file")
       }
+
+      const blob = await fileResponse.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      
+      const link = document.createElement("a")
+      link.href = blobUrl
+      link.download = downloadFilename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000)
 
       setStatus("complete")
     } catch (err) {

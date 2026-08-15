@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Clock, Play } from "lucide-react"
+import { Clock, Play, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface MediaInfo {
@@ -19,18 +19,28 @@ interface MediaPreviewProps {
 }
 
 export function MediaPreview({ media, className }: MediaPreviewProps) {
+  const hasThumbnail = Boolean(media.thumbnail && media.thumbnail.trim().length > 0)
+
   return (
     <div className={cn("bg-card rounded-2xl border border-border overflow-hidden", className)}>
       <div className="flex flex-col sm:flex-row gap-4 p-4">
-        <div className="relative w-full sm:w-48 aspect-video rounded-xl overflow-hidden bg-muted shrink-0">
-          <Image
-            src={media.thumbnail}
-            alt={media.title}
-            fill
-            className="object-cover"
-          />
+        <div className="relative w-full sm:w-48 aspect-video rounded-xl overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+          {hasThumbnail ? (
+            <Image
+              src={media.thumbnail}
+              alt={media.title}
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/20 via-background to-accent/20">
+              <Video className="h-8 w-8 text-muted-foreground mb-1" />
+              <span className="text-xs text-muted-foreground capitalize">{media.platform}</span>
+            </div>
+          )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-            <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-md">
               <Play className="h-5 w-5 text-foreground fill-current ml-0.5" />
             </div>
           </div>
@@ -40,24 +50,24 @@ export function MediaPreview({ media, className }: MediaPreviewProps) {
             </div>
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <div className="flex items-center gap-2 mb-1.5">
             <PlatformIcon platform={media.platform} />
             <span className="text-sm font-medium text-muted-foreground capitalize">
               {media.platform}
             </span>
           </div>
-          <h3 className="text-lg font-semibold text-foreground line-clamp-2 mb-2">
+          <h3 className="text-lg font-semibold text-foreground line-clamp-2 mb-1">
             {media.title}
           </h3>
           {media.author && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground font-medium">
               {media.author}
             </p>
           )}
           {media.duration && (
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-2">
-              <Clock className="h-4 w-4" />
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+              <Clock className="h-3.5 w-3.5" />
               <span>{media.duration}</span>
             </div>
           )}
